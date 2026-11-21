@@ -18,6 +18,13 @@ contextBridge.exposeInMainWorld('fairyDesktop', {
     ipcRenderer.on('fairy:cmd', handler);
     return () => ipcRenderer.removeListener('fairy:cmd', handler);
   },
+  onSpeak: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('fairy:speak', handler);
+    return () => ipcRenderer.removeListener('fairy:speak', handler);
+  },
+  setTtsEnabled: (enabled) => ipcRenderer.send('fairy:set-tts', Boolean(enabled)),
+  speakText: (text) => ipcRenderer.invoke('fairy:speak-text', String(text || '')),
   notifyReady: () => ipcRenderer.send('fairy:ready'),
   getStartup: () => ipcRenderer.invoke('fairy:get-startup'),
   setStartup: (enabled) => ipcRenderer.invoke('fairy:set-startup', Boolean(enabled)),

@@ -64,6 +64,8 @@ const BRAIN_DIR = join(APP_DATA_DIR, 'brain');
 const VOICE_CHATS_DIR = join(APP_DATA_DIR, 'voice_chats');
 const CONV_ID_RE = /^[0-9a-f-]{8,}$/i;
 const VOICE_WORKER_SCRIPT = join(ROOT_DIR, '..', 'scripts', 'antigravity-voice-worker.ps1');
+const TTS_PYTHON_EXE = join(ROOT_DIR, '..', 'voice-lab', 'VieNeu-TTS', '.venv', 'Scripts', 'python.exe');
+const TTS_DAEMON_SCRIPT = join(ROOT_DIR, '..', 'voice-lab', 'fairy_tts_daemon.py');
 
 const ASSET_MAP = {
   '/assets/boot.webm': { file: join(ASSETS_DIR, 'boot.webm'), type: 'video/webm' },
@@ -618,6 +620,7 @@ function readSnapshot() {
       mood: 'idle',
       emotionMood: 'idle',
       dialogueQuip: '',
+      lastReplySpeech: '',
       voiceActive: false,
       lastVoiceText: '',
       hybridConnected,
@@ -655,6 +658,7 @@ function readSnapshot() {
     mood: analysis.mood,
     emotionMood: analysis.emotionMood,
     dialogueQuip: analysis.dialogueQuip,
+    lastReplySpeech: cleanTextForSpeech(dialogue.modelText || ''),
     voiceActive: Boolean(voiceChat.voiceActive),
     lastVoiceText: voiceChat.lastVoiceText || '',
     hybridConnected,
@@ -677,13 +681,37 @@ function readSnapshot() {
   };
 }
 
+function cleanTextForSpeech(raw) {
+  let s = String(raw || '');
+  s = s.replace(/```[\s\S]*?```/g, ' ');
+  s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  s = s.replace(/https?:\/\/\S+/gi, ' ');
+  s = s.replace(/file:\/\/\/\S+/gi, ' ');
+  s = s.replace(/[A-Za-z]:\\[^\s`'",)]+/g, ' ');
+  s = s.replace(/`([^`]{1,40})`/g, '$1');
+  s = s.replace(/`[^`]+`/g, ' ');
+  s = s.replace(/^\s*—\s*Ting~\s*/i, 'Ting. ');
+  s = s.replace(/[*#_~>|`]/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  const parts = s.split(/(?<=[.!?])\s+/).filter((p) => p.trim().length > 2);
+  let picked = '';
+  for (const p of parts) {
+    if (picked && picked.length + p.length + 1 > 210) break;
+    picked = picked ? `${picked} ${p}` : p;
+    if (picked.length >= 130) break;
+  }
+  return (picked || s.slice(0, 210)).trim();
+}
+
 function pushStateToRenderer() {
   if (!mainWin || mainWin.isDestroyed()) return;
   const snap = readSnapshot();
-  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.voiceActive}|${snap.lastVoiceText}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}`;
+  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.lastReplySpeech}|${snap.voiceActive}|${snap.lastVoiceText}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}`;
   if (key === lastStateKey) return;
   lastStateKey = key;
   mainWin.webContents.send('fairy:state', snap);
+  scheduleSpeechFromSnapshot(snap);
 }
 
 function startTelemetryWatcher() {
@@ -1303,6 +1331,191 @@ ipcMain.handle('fairy:set-startup', (_ev, enabled) => setStartupEnabled(Boolean(
 ipcMain.handle('fairy:trigger-voice', (_ev, payload) => triggerAntigravityVoice(payload));
 ipcMain.handle('fairy:hybrid-action', (_ev, req) => executeHybridAction(req));
 
+let ttsWorker = null;
+let ttsWorkerReady = false;
+let ttsWorkerBuf = '';
+let ttsReqSeq = 0;
+const ttsPending = new Map();
+let ttsEnabled = true;
+let ttsBusy = false;
+let ttsQueuedText = '';
+let ttsBaselineReady = false;
+let lastSpokenKey = '';
+let lastSpokenText = '';
+let speechDebounceTimer = null;
+
+function rejectPendingTts(reason) {
+  for (const [id, entry] of ttsPending.entries()) {
+    clearTimeout(entry.timer);
+    entry.resolve({ ok: false, error: reason });
+    ttsPending.delete(id);
+  }
+}
+
+function startTtsWorker() {
+  if (IS_SMOKE_TEST || ttsWorker || !existsSync(TTS_PYTHON_EXE) || !existsSync(TTS_DAEMON_SCRIPT)) return;
+  try {
+    const child = spawn(TTS_PYTHON_EXE, [TTS_DAEMON_SCRIPT], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    ttsWorker = child;
+    ttsWorkerReady = false;
+    ttsWorkerBuf = '';
+
+    child.stdout.setEncoding('utf-8');
+    child.stdout.on('data', (chunk) => {
+      ttsWorkerBuf += chunk;
+      const lines = ttsWorkerBuf.split(/\r?\n/);
+      ttsWorkerBuf = lines.pop() || '';
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (typeof msg.ready === 'boolean') {
+            ttsWorkerReady = msg.ready;
+            continue;
+          }
+          if (typeof msg.id === 'number' && ttsPending.has(msg.id)) {
+            const p = ttsPending.get(msg.id);
+            clearTimeout(p.timer);
+            ttsPending.delete(msg.id);
+            p.resolve(msg);
+          }
+        } catch {
+          // Ignore non-JSON stdout line.
+        }
+      }
+    });
+
+    child.on('exit', () => {
+      if (ttsWorker === child) {
+        ttsWorker = null;
+        ttsWorkerReady = false;
+      }
+      rejectPendingTts('tts_worker_exited');
+    });
+    child.on('error', () => {
+      if (ttsWorker === child) {
+        ttsWorker = null;
+        ttsWorkerReady = false;
+      }
+      rejectPendingTts('tts_worker_error');
+    });
+  } catch {
+    ttsWorker = null;
+  }
+}
+
+function runTtsSynthesis(text, timeoutMs = 45000) {
+  return new Promise((resolve) => {
+    const cleaned = cleanTextForSpeech(text);
+    if (!cleaned || IS_SMOKE_TEST) {
+      resolve({ ok: false, error: 'empty_or_smoke' });
+      return;
+    }
+    if (!ttsWorker) startTtsWorker();
+    if (!ttsWorker || !ttsWorker.stdin || ttsWorker.killed) {
+      resolve({ ok: false, error: 'tts_unavailable' });
+      return;
+    }
+    const id = ++ttsReqSeq;
+    const fileName = `live-${id % 4}.wav`;
+    const outPath = join(PLUGIN_ROOT, 'assets', 'voice', fileName);
+    const timer = setTimeout(() => {
+      if (ttsPending.has(id)) {
+        ttsPending.delete(id);
+        resolve({ ok: false, error: 'tts_timeout' });
+      }
+    }, timeoutMs);
+    ttsPending.set(id, {
+      timer,
+      resolve: (res) => resolve({ ...res, url: `/assets/voice/${fileName}?t=${Date.now()}`, text: cleaned }),
+    });
+    try {
+      ttsWorker.stdin.write(`${JSON.stringify({ id, text: cleaned, out: outPath })}\n`, 'utf-8');
+    } catch {
+      clearTimeout(timer);
+      ttsPending.delete(id);
+      resolve({ ok: false, error: 'tts_write_failed' });
+    }
+  });
+}
+
+async function enqueueFairySpeech(text) {
+  const cleaned = cleanTextForSpeech(text);
+  if (!cleaned || !ttsEnabled || IS_SMOKE_TEST) return { ok: false, skipped: true };
+  if (ttsBusy) {
+    ttsQueuedText = cleaned;
+    return { ok: true, queued: true };
+  }
+  ttsBusy = true;
+  let current = cleaned;
+  let lastRes = { ok: false };
+  try {
+    while (current) {
+      ttsQueuedText = '';
+      lastRes = await runTtsSynthesis(current);
+      if (lastRes.ok && mainWin && !mainWin.isDestroyed() && ttsEnabled) {
+        mainWin.webContents.send('fairy:speak', { url: lastRes.url, text: lastRes.text || current });
+      }
+      current = ttsEnabled ? ttsQueuedText : '';
+    }
+  } finally {
+    ttsBusy = false;
+  }
+  return lastRes;
+}
+
+function buildSpeechCandidate(snap) {
+  if (!snap) return { key: '', text: '', delayMs: 450 };
+  if (snap.lastEvent === 'Stop' || snap.mood === 'done') {
+    const txt = snap.lastReplySpeech || cleanTextForSpeech(snap.dialogueQuip || '');
+    const stamp = snap.doneAt || snap.updatedAt || '';
+    return txt ? { key: `stop:${snap.conversationId}:${stamp}:${txt.slice(0, 60)}`, text: txt, delayMs: 450 } : { key: '', text: '', delayMs: 450 };
+  }
+  if (snap.lastVoiceText && /[.!?]\s*$/.test(String(snap.lastVoiceText).trim())) {
+    const txt = cleanTextForSpeech(snap.lastVoiceText);
+    return txt ? { key: `voice:${snap.conversationId}:${txt.slice(0, 80)}`, text: txt, delayMs: 1100 } : { key: '', text: '', delayMs: 1100 };
+  }
+  return { key: '', text: '', delayMs: 450 };
+}
+
+function scheduleSpeechFromSnapshot(snap) {
+  const initial = buildSpeechCandidate(snap);
+  if (!ttsBaselineReady) {
+    ttsBaselineReady = true;
+    lastSpokenKey = initial.key;
+    lastSpokenText = initial.text;
+    return;
+  }
+  if (!ttsEnabled || IS_SMOKE_TEST || !initial.key || initial.key === lastSpokenKey) return;
+  clearTimeout(speechDebounceTimer);
+  speechDebounceTimer = setTimeout(() => {
+    const latest = readSnapshot();
+    const cand = buildSpeechCandidate(latest);
+    if (!ttsEnabled || !cand.key || cand.key === lastSpokenKey) return;
+    if (cand.text && cand.text === lastSpokenText && cand.key.startsWith('voice:')) return;
+    lastSpokenKey = cand.key;
+    lastSpokenText = cand.text;
+    enqueueFairySpeech(cand.text).catch(() => {});
+  }, initial.delayMs);
+}
+
+ipcMain.on('fairy:set-tts', (_ev, enabled) => {
+  ttsEnabled = Boolean(enabled);
+  if (ttsEnabled && !IS_SMOKE_TEST) startTtsWorker();
+});
+
+ipcMain.handle('fairy:speak-text', async (_ev, text) => {
+  const prev = ttsEnabled;
+  ttsEnabled = true;
+  const res = await enqueueFairySpeech(text);
+  ttsEnabled = prev;
+  return res;
+});
+
 ipcMain.on('fairy:ready', () => {
   pushStateToRenderer();
   if (IS_SMOKE_TEST) {
@@ -1336,11 +1549,21 @@ app.whenReady().then(async () => {
   }
   startTelemetryWatcher();
   startVoiceWorker();
+  if (!IS_SMOKE_TEST) startTtsWorker();
 });
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   clearInterval(pollTimer);
+  clearTimeout(speechDebounceTimer);
+  if (ttsWorker) {
+    try {
+      ttsWorker.kill();
+    } catch {
+      // Ignore worker kill error.
+    }
+    ttsWorker = null;
+  }
   if (voiceWorker) {
     try {
       voiceWorker.kill();

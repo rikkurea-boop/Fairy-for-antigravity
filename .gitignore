@@ -2,6 +2,8 @@ node_modules/
 cache/
 diag/
 /voice/
+live-*.wav
+*.tmp.wav
 voice-lab/VieNeu-TTS/
 .venv/
 voice-home.txt

@@ -13,6 +13,7 @@
     rate: 'fairy.desktop.rate',
     pos: 'fairy.desktop.dockPos',
     dblAction: 'fairy.desktop.dblAction',
+    tts: 'fairy.desktop.tts',
   };
   const DBL_ACTIONS = ['voice-mode', 'hybrid-chat', 'win-voice', 'focus-chat', 'toggle-bubble'];
   const HOLD_DRAG_MS = 220;
@@ -80,6 +81,7 @@
     theme: String(readPref(KEYS.theme, 'dark')),
     rate: [0.7, 1, 1.5].includes(Number(readPref(KEYS.rate, 1))) ? Number(readPref(KEYS.rate, 1)) : 1,
     dblAction: DBL_ACTIONS.includes(migratedDbl) ? migratedDbl : 'voice-mode',
+    tts: Boolean(readPref(KEYS.tts, true)),
   };
 
   let customPos = readPref(KEYS.pos, null);
@@ -830,6 +832,7 @@
   let bootFailsafe = null;
   let greetTimer = null;
   let greetAudio = null;
+  let liveSpeakAudio = null;
 
   function stopGreetingVoice() {
     if (greetAudio) {
@@ -839,6 +842,46 @@
       } catch {}
       greetAudio = null;
     }
+  }
+
+  function stopLiveSpeakAudio() {
+    if (liveSpeakAudio) {
+      try {
+        liveSpeakAudio.pause();
+        liveSpeakAudio.currentTime = 0;
+      } catch {}
+      liveSpeakAudio = null;
+    }
+  }
+
+  function playLiveSpeakAudio(payload) {
+    if (!payload || !payload.url || !prefs.tts || phase !== 'dock') return;
+    const vol = Math.min(1, Math.max(0, prefs.volume / 100));
+    if (vol <= 0) return;
+    stopGreetingVoice();
+    stopLiveSpeakAudio();
+
+    const audio = new Audio(payload.url);
+    liveSpeakAudio = audio;
+    audio.volume = vol;
+    audio.addEventListener('playing', () => {
+      if (liveSpeakAudio !== audio) return;
+      setTalkingState(true, 20000);
+      if (payload.text && (bubbleEl.classList.contains('hidden') || bubbleEl.dataset.mode === 'toast' || bubbleEl.dataset.mode === 'turn')) {
+        openBubble('toast', `— ${payload.text}`, 8000);
+      }
+    });
+    audio.addEventListener('ended', () => {
+      if (liveSpeakAudio !== audio) return;
+      liveSpeakAudio = null;
+      setTalkingState(false, 0);
+    });
+    audio.addEventListener('error', () => {
+      if (liveSpeakAudio !== audio) return;
+      liveSpeakAudio = null;
+      setTalkingState(false, 0);
+    });
+    audio.play().catch(() => {});
   }
 
   function playGreetingVoice() {
@@ -1242,6 +1285,7 @@
     $('sw-autoboot').dataset.on = prefs.autoBoot ? '1' : '0';
     if ($('sw-startup')) $('sw-startup').dataset.on = startupEnabled ? '1' : '0';
     $('sw-drag').dataset.on = prefs.drag ? '1' : '0';
+    if ($('sw-tts')) $('sw-tts').dataset.on = prefs.tts ? '1' : '0';
     if ($('sw-chrome')) $('sw-chrome').dataset.on = prefs.chrome ? '1' : '0';
     $('rng-volume').value = String(prefs.volume);
     $('vol-label').textContent = `${prefs.volume}%`;
@@ -1419,6 +1463,20 @@
     writePref(KEYS.drag, prefs.drag);
     syncPrefsUI();
   });
+  if ($('sw-tts')) {
+    $('sw-tts').addEventListener('click', () => {
+      prefs.tts = !prefs.tts;
+      writePref(KEYS.tts, prefs.tts);
+      if (!prefs.tts) {
+        stopLiveSpeakAudio();
+        setTalkingState(false, 0);
+      }
+      if (window.fairyDesktop && window.fairyDesktop.setTtsEnabled) {
+        window.fairyDesktop.setTtsEnabled(prefs.tts);
+      }
+      syncPrefsUI();
+    });
+  }
   if ($('sw-chrome')) {
     $('sw-chrome').addEventListener('click', () => {
       prefs.chrome = !prefs.chrome;
@@ -1499,6 +1557,12 @@
   // ---------- Electron IPC ----------
   if (window.fairyDesktop) {
     window.fairyDesktop.onState(applyIncomingState);
+    if (window.fairyDesktop.onSpeak) {
+      window.fairyDesktop.onSpeak(playLiveSpeakAudio);
+    }
+    if (window.fairyDesktop.setTtsEnabled) {
+      window.fairyDesktop.setTtsEnabled(prefs.tts);
+    }
     window.fairyDesktop.onCommand((cmd) => {
       if (cmd === 'replay-boot') setPhase('boot');
       else if (cmd === 'replay-greet') setPhase('greet');

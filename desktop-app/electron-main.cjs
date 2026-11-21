@@ -1531,6 +1531,7 @@ function startVoiceWorker() {
           const msg = JSON.parse(line);
           if (msg.ready) {
             voiceWorkerReady = true;
+            syncAntigravityMuteState(true);
             continue;
           }
           if (typeof msg.id === 'number' && voicePending.has(msg.id)) {
@@ -1562,6 +1563,18 @@ function startVoiceWorker() {
   } catch {
     voiceWorker = null;
   }
+}
+
+let autoMuteAntigravity = true;
+let lastMuteSyncAt = 0;
+
+function syncAntigravityMuteState(force = false) {
+  if (!IS_WIN || IS_SMOKE_TEST || !voiceWorkerReady) return;
+  const now = Date.now();
+  if (!force && now - lastMuteSyncAt < 3800) return;
+  lastMuteSyncAt = now;
+  const shouldMute = Boolean(ttsEnabled && autoMuteAntigravity);
+  sendVoiceWorkerCommand(shouldMute ? 'MUTE_ANTIGRAVITY' : 'UNMUTE_ANTIGRAVITY', {}, 1500).catch(() => {});
 }
 
 function sendVoiceWorkerCommand(cmd, extra = {}, timeoutMs = 4000) {
@@ -1641,7 +1654,11 @@ async function triggerAntigravityVoice(payload = {}) {
       : mode === 'focus-chat'
         ? 'FOCUS_CHAT'
         : 'VOICE_MODE';
-  return sendVoiceWorkerCommand(cmd, {}, voiceWorkerReady ? 4500 : 8000);
+  return sendVoiceWorkerCommand(
+    cmd,
+    { muteAg: Boolean(ttsEnabled && autoMuteAntigravity) },
+    voiceWorkerReady ? 4500 : 8000
+  );
 }
 
 function postToSidecar(port, token, reqPath, bodyObj, timeoutMs = 2500) {
@@ -1801,6 +1818,32 @@ function isAlreadySpokenNorm(norm) {
     for (const prev of spokenVoiceNorms) {
       if (prev.length >= 14 && (prev.includes(norm) || prev.startsWith(norm))) {
         return true;
+      }
+    }
+  }
+  const curWords = norm.split(' ').filter(Boolean);
+  if (curWords.length >= 5) {
+    const curSet = new Set(curWords);
+    const curHead = curWords.slice(0, 3);
+    for (const prev of spokenVoiceNorms) {
+      const prevWords = prev.split(' ').filter(Boolean);
+      if (prevWords.length < 5) continue;
+      const prevSet = new Set(prevWords);
+      const smaller = curSet.size <= prevSet.size ? curSet : prevSet;
+      const larger = curSet.size <= prevSet.size ? prevSet : curSet;
+      let overlap = 0;
+      for (const w of smaller) {
+        if (larger.has(w)) overlap += 1;
+      }
+      const ratio = overlap / smaller.size;
+      if (ratio >= 0.8) return true;
+      if (ratio >= 0.72) {
+        const prevHeadSet = new Set(prevWords.slice(0, 4));
+        let headMatch = 0;
+        for (const hw of curHead) {
+          if (prevHeadSet.has(hw)) headMatch += 1;
+        }
+        if (headMatch >= 2) return true;
       }
     }
   }
@@ -2109,7 +2152,11 @@ async function pollLiveVoiceSubtitle() {
   uiaPollInFlight = true;
   let nextDelay = 700;
   try {
-    const res = await sendVoiceWorkerCommand('READ_VOICE_SUBTITLE', {}, 900);
+    const res = await sendVoiceWorkerCommand(
+      'READ_VOICE_SUBTITLE',
+      { muteAg: Boolean(ttsEnabled && autoMuteAntigravity) },
+      900
+    );
     const now = Date.now();
     if (!res || !res.ok) {
       nextDelay = res?.error === 'window_not_found' ? 2000 : 1000;
@@ -2187,6 +2234,13 @@ async function pollLiveVoiceSubtitle() {
 ipcMain.on('fairy:set-tts', (_ev, enabled) => {
   ttsEnabled = Boolean(enabled);
   if (ttsEnabled && !IS_SMOKE_TEST) startTtsWorker();
+  syncAntigravityMuteState(true);
+});
+
+ipcMain.handle('fairy:get-auto-mute', () => autoMuteAntigravity);
+ipcMain.on('fairy:set-auto-mute', (_ev, enabled) => {
+  autoMuteAntigravity = Boolean(enabled);
+  syncAntigravityMuteState(true);
 });
 
 ipcMain.handle('fairy:speak-text', async (_ev, text) => {
@@ -2236,7 +2290,19 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('will-quit', () => {
+let shutdownUnmuteDone = false;
+app.on('will-quit', (e) => {
+  if (!shutdownUnmuteDone && IS_WIN && !IS_SMOKE_TEST && voiceWorkerReady && voiceWorker && voiceWorker.stdin && !voiceWorker.killed) {
+    shutdownUnmuteDone = true;
+    e.preventDefault();
+    Promise.race([
+      sendVoiceWorkerCommand('UNMUTE_ANTIGRAVITY', {}, 350),
+      new Promise((resolve) => setTimeout(resolve, 350)),
+    ]).finally(() => {
+      app.quit();
+    });
+    return;
+  }
   globalShortcut.unregisterAll();
   clearInterval(pollTimer);
   clearTimeout(uiaPollTimer);

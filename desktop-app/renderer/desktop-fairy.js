@@ -14,6 +14,7 @@
     pos: 'fairy.desktop.dockPos',
     dblAction: 'fairy.desktop.dblAction',
     tts: 'fairy.desktop.tts',
+    autoMute: 'fairy.desktop.autoMute',
   };
   const DBL_ACTIONS = ['voice-mode', 'hybrid-chat', 'win-voice', 'focus-chat', 'toggle-bubble'];
   const HOLD_DRAG_MS = 220;
@@ -82,6 +83,7 @@
     rate: [0.7, 1, 1.5].includes(Number(readPref(KEYS.rate, 1))) ? Number(readPref(KEYS.rate, 1)) : 1,
     dblAction: DBL_ACTIONS.includes(migratedDbl) ? migratedDbl : 'voice-mode',
     tts: Boolean(readPref(KEYS.tts, true)),
+    autoMute: Boolean(readPref(KEYS.autoMute, true)),
   };
 
   let customPos = readPref(KEYS.pos, null);
@@ -1371,6 +1373,7 @@
     if ($('sw-startup')) $('sw-startup').dataset.on = startupEnabled ? '1' : '0';
     $('sw-drag').dataset.on = prefs.drag ? '1' : '0';
     if ($('sw-tts')) $('sw-tts').dataset.on = prefs.tts ? '1' : '0';
+    if ($('sw-automute')) $('sw-automute').dataset.on = prefs.autoMute ? '1' : '0';
     if ($('sw-chrome')) $('sw-chrome').dataset.on = prefs.chrome ? '1' : '0';
     $('rng-volume').value = String(prefs.volume);
     $('vol-label').textContent = `${prefs.volume}%`;
@@ -1562,6 +1565,16 @@
       syncPrefsUI();
     });
   }
+  if ($('sw-automute')) {
+    $('sw-automute').addEventListener('click', () => {
+      prefs.autoMute = !prefs.autoMute;
+      writePref(KEYS.autoMute, prefs.autoMute);
+      if (window.fairyDesktop && window.fairyDesktop.setAutoMute) {
+        window.fairyDesktop.setAutoMute(prefs.autoMute);
+      }
+      syncPrefsUI();
+    });
+  }
   if ($('sw-chrome')) {
     $('sw-chrome').addEventListener('click', () => {
       prefs.chrome = !prefs.chrome;
@@ -1647,6 +1660,9 @@
     }
     if (window.fairyDesktop.setTtsEnabled) {
       window.fairyDesktop.setTtsEnabled(prefs.tts);
+    }
+    if (window.fairyDesktop.setAutoMute) {
+      window.fairyDesktop.setAutoMute(prefs.autoMute);
     }
     window.fairyDesktop.onCommand((cmd) => {
       if (cmd === 'replay-boot') setPhase('boot');

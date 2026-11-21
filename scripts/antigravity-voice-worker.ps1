@@ -51,6 +51,168 @@ public static class AntigravityVoiceBridge {
     [MarshalAs(UnmanagedType.IDispatch)] out object ppvObject
   );
 
+  [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+  class MMDeviceEnumerator {}
+
+  [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IMMDeviceEnumerator {
+    [PreserveSig]
+    int EnumAudioEndpoints(int dataFlow, int dwStateMask, out IMMDeviceCollection ppDevices);
+    [PreserveSig]
+    int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+  }
+
+  [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IMMDeviceCollection {
+    [PreserveSig]
+    int GetCount(out uint pcDevices);
+    [PreserveSig]
+    int Item(uint nDevice, out IMMDevice ppDevice);
+  }
+
+  [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IMMDevice {
+    [PreserveSig]
+    int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+  }
+
+  [Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IAudioSessionManager2 {
+    int NotImpl1();
+    int NotImpl2();
+    [PreserveSig]
+    int GetSessionEnumerator(out IAudioSessionEnumerator SessionEnum);
+  }
+
+  [Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IAudioSessionEnumerator {
+    [PreserveSig]
+    int GetCount(out int SessionCount);
+    [PreserveSig]
+    int GetSession(int SessionCount, out IAudioSessionControl2 Session);
+  }
+
+  [Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IAudioSessionControl2 {
+    int GetState(out int state);
+    int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+    int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string Value, [MarshalAs(UnmanagedType.LPStruct)] Guid EventContext);
+    int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+    int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string Value, [MarshalAs(UnmanagedType.LPStruct)] Guid EventContext);
+    int GetGroupingParam(out Guid pRetVal);
+    int SetGroupingParam([MarshalAs(UnmanagedType.LPStruct)] Guid Override, [MarshalAs(UnmanagedType.LPStruct)] Guid EventContext);
+    int RegisterAudioSessionNotification(IntPtr NewNotifications);
+    int UnregisterAudioSessionNotification(IntPtr NewNotifications);
+    [PreserveSig]
+    int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+    [PreserveSig]
+    int GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string pRetVal);
+    [PreserveSig]
+    int GetProcessId(out uint pRetVal);
+    [PreserveSig]
+    int IsSystemSoundsSession();
+    [PreserveSig]
+    int SetDuckingPreference(bool optOut);
+  }
+
+  [Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface ISimpleAudioVolume {
+    [PreserveSig]
+    int SetMasterVolume(float fLevel, ref Guid EventContext);
+    [PreserveSig]
+    int GetMasterVolume(out float pfLevel);
+    [PreserveSig]
+    int SetMute(bool bMute, ref Guid EventContext);
+    [PreserveSig]
+    int GetMute(out bool pbMute);
+  }
+
+  static int MuteMatchingSessionsOnDevice(IMMDevice device, string procSubstr, bool mute) {
+    if (device == null) return 0;
+    int updated = 0;
+    object mgrObj = null;
+    IAudioSessionEnumerator sessionEnum = null;
+    try {
+      Guid iidMgr = typeof(IAudioSessionManager2).GUID;
+      int hr = device.Activate(ref iidMgr, 23, IntPtr.Zero, out mgrObj);
+      if (hr != 0 || mgrObj == null) return 0;
+      var mgr = (IAudioSessionManager2)mgrObj;
+      hr = mgr.GetSessionEnumerator(out sessionEnum);
+      if (hr != 0 || sessionEnum == null) return 0;
+      int count = 0;
+      sessionEnum.GetCount(out count);
+      Guid evtCtx = Guid.Empty;
+      for (int i = 0; i < count; i++) {
+        IAudioSessionControl2 ctl = null;
+        try {
+          if (sessionEnum.GetSession(i, out ctl) != 0 || ctl == null) continue;
+          uint pid = 0;
+          ctl.GetProcessId(out pid);
+          if (pid == 0) continue;
+          string pname = "";
+          try { pname = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName ?? ""; } catch { continue; }
+          if (pname.IndexOf(procSubstr, StringComparison.OrdinalIgnoreCase) < 0) continue;
+          var vol = ctl as ISimpleAudioVolume;
+          if (vol != null) {
+            bool curMute = false;
+            vol.GetMute(out curMute);
+            if (curMute != mute) {
+              vol.SetMute(mute, ref evtCtx);
+            }
+            updated++;
+          }
+        } finally {
+          if (ctl != null) try { Marshal.ReleaseComObject(ctl); } catch {}
+        }
+      }
+    } finally {
+      if (sessionEnum != null) try { Marshal.ReleaseComObject(sessionEnum); } catch {}
+      if (mgrObj != null) try { Marshal.ReleaseComObject(mgrObj); } catch {}
+    }
+    return updated;
+  }
+
+  static int SetProcessMute(string procSubstr, bool mute) {
+    int touched = 0;
+    object enumObj = null;
+    IMMDeviceCollection col = null;
+    try {
+      enumObj = new MMDeviceEnumerator();
+      var enumerator = (IMMDeviceEnumerator)enumObj;
+      if (enumerator.EnumAudioEndpoints(0, 1, out col) == 0 && col != null) {
+        uint devCount = 0;
+        col.GetCount(out devCount);
+        for (uint i = 0; i < devCount; i++) {
+          IMMDevice dev = null;
+          try {
+            if (col.Item(i, out dev) == 0 && dev != null) {
+              touched += MuteMatchingSessionsOnDevice(dev, procSubstr, mute);
+            }
+          } finally {
+            if (dev != null) try { Marshal.ReleaseComObject(dev); } catch {}
+          }
+        }
+      } else {
+        foreach (int role in new int[] { 1, 2 }) {
+          IMMDevice dev = null;
+          try {
+            if (enumerator.GetDefaultAudioEndpoint(0, role, out dev) == 0 && dev != null) {
+              touched += MuteMatchingSessionsOnDevice(dev, procSubstr, mute);
+            }
+          } finally {
+            if (dev != null) try { Marshal.ReleaseComObject(dev); } catch {}
+          }
+        }
+      }
+    } catch {
+      // Fall back quietly if COM audio endpoint is unavailable.
+    } finally {
+      if (col != null) try { Marshal.ReleaseComObject(col); } catch {}
+      if (enumObj != null) try { Marshal.ReleaseComObject(enumObj); } catch {}
+    }
+    return touched;
+  }
+
   const uint OBJID_CLIENT = 0xFFFFFFFC;
   static readonly Guid IID_IAccessible = new Guid("618736E0-3C3D-11CF-810C-00AA00389B71");
 
@@ -801,17 +963,19 @@ public static class AntigravityVoiceBridge {
         }
       }
 
-      var skipTextRx = new Regex(@"^(?:[×✕xX]|End|Antigravity|\d{1,2}:\d{2}|Planning|Fast|Turbo|Model|Ask anything.*|Type a message.*)$", RegexOptions.IgnoreCase);
+      var skipTextRx = new Regex(@"^(?:[×✕xX]|End|Planning|Fast|Turbo|Model|Ask anything.*|Type a message.*|\d{1,2}:\d{2})$", RegexOptions.IgnoreCase);
       var subNodes = new List<UiaTextItem>();
       foreach (var it in items) {
         if (it.Kind != ControlType.Text) continue;
-        if (it.Rect.Top < headerBottom - 4 || it.Rect.Top > cardBottomLimit - 4) continue;
+        if (agItem != null && (it == agItem || Math.Abs(it.CenterY - agItem.CenterY) <= 10.0)) continue;
+        if (timerItem != null && (it == timerItem || Math.Abs(it.CenterY - timerItem.CenterY) <= 10.0)) continue;
+        if (it.Rect.Top < headerBottom - 2 || it.Rect.Top > cardBottomLimit - 4) continue;
         if (it.Rect.Bottom > cardBottomLimit + 8) continue;
         if (it.Rect.Right < cardLeft || it.Rect.Left > cardRight) continue;
-        if (it.Rect.Height < 11) continue;
+        if (it.Rect.Height < 10) continue;
         string cleaned = Regex.Replace(it.Text, @"\s+", " ").Trim();
         if (string.IsNullOrEmpty(cleaned) || skipTextRx.IsMatch(cleaned)) continue;
-        if (Regex.Replace(cleaned, @"[^A-Za-zÀ-ỹ0-9]", "").Length < 2) continue;
+        if (!Regex.IsMatch(cleaned, @"[A-Za-zÀ-ỹ0-9.,!?;:…]")) continue;
         subNodes.Add(new UiaTextItem {
           Rect = it.Rect,
           CenterY = it.CenterY,
@@ -820,29 +984,51 @@ public static class AntigravityVoiceBridge {
         });
       }
 
-      subNodes.Sort((a, b) => {
-        int cy = a.Rect.Top.CompareTo(b.Rect.Top);
-        return cy != 0 ? cy : a.Rect.Left.CompareTo(b.Rect.Left);
-      });
+      // Sắp xếp từng dòng theo CenterY rồi theo Left trên mỗi dòng (tránh comparator không bắc cầu).
+      subNodes.Sort((a, b) => a.CenterY.CompareTo(b.CenterY));
+      var rows = new List<List<UiaTextItem>>();
+      foreach (var node in subNodes) {
+        if (rows.Count == 0 || Math.Abs(node.CenterY - rows[rows.Count - 1][0].CenterY) > 10.0) {
+          rows.Add(new List<UiaTextItem> { node });
+        } else {
+          rows[rows.Count - 1].Add(node);
+        }
+      }
+      var orderedNodes = new List<UiaTextItem>();
+      foreach (var row in rows) {
+        row.Sort((a, b) => a.Rect.Left.CompareTo(b.Rect.Left));
+        orderedNodes.AddRange(row);
+      }
 
-      var kept = new List<string>();
-      for (int i = 0; i < subNodes.Count; i++) {
-        string cur = subNodes[i].Text;
+      // Chỉ khử trùng lặp khi hai node nằm trùng tọa độ hoặc node lớn bao trọn hộp của node nhỏ.
+      var keptItems = new List<UiaTextItem>();
+      var keptTexts = new List<string>();
+      for (int i = 0; i < orderedNodes.Count; i++) {
+        var curItem = orderedNodes[i];
+        string cur = curItem.Text;
         bool duplicate = false;
-        for (int j = 0; j < kept.Count; j++) {
-          if (kept[j].Equals(cur, StringComparison.Ordinal)) {
-            duplicate = true;
-            break;
-          }
-          if (kept[j].Contains(cur) && cur.Length >= 8) {
+        for (int j = 0; j < keptItems.Count; j++) {
+          var prev = keptItems[j];
+          bool sameSpot = Math.Abs(prev.Rect.Left - curItem.Rect.Left) <= 4.0 &&
+            Math.Abs(prev.Rect.Top - curItem.Rect.Top) <= 4.0 &&
+            prev.Text.Equals(cur, StringComparison.Ordinal);
+          bool enclosedSame = prev.Rect.Left <= curItem.Rect.Left + 2.0 &&
+            prev.Rect.Right >= curItem.Rect.Right - 2.0 &&
+            prev.Rect.Top <= curItem.Rect.Top + 2.0 &&
+            prev.Rect.Bottom >= curItem.Rect.Bottom - 2.0 &&
+            prev.Text.Contains(cur);
+          if (sameSpot || enclosedSame) {
             duplicate = true;
             break;
           }
         }
-        if (!duplicate) kept.Add(cur);
+        if (!duplicate) {
+          keptItems.Add(curItem);
+          keptTexts.Add(cur);
+        }
       }
 
-      string subtitle = Regex.Replace(string.Join(" ", kept), @"\s+", " ").Trim();
+      string subtitle = Regex.Replace(string.Join(" ", keptTexts), @"\s+", " ").Trim();
       if (subtitle.Length > 420) subtitle = subtitle.Substring(0, 420);
 
       return "{\"ok\":true,\"voiceOpen\":true,\"timer\":\"" + EscapeJson(timerText) +
@@ -853,6 +1039,23 @@ public static class AntigravityVoiceBridge {
   }
 
   public static string Execute(string cmd) {
+    return Execute(cmd, false);
+  }
+
+  public static string Execute(string cmd, bool muteAg) {
+    if (cmd == "MUTE_ANTIGRAVITY") {
+      int touched = SetProcessMute("Antigravity", true);
+      return "{\"ok\":true,\"muted\":true,\"count\":" + touched + "}";
+    }
+    if (cmd == "UNMUTE_ANTIGRAVITY") {
+      int touched = SetProcessMute("Antigravity", false);
+      return "{\"ok\":true,\"muted\":false,\"count\":" + touched + "}";
+    }
+
+    if (muteAg) {
+      SetProcessMute("Antigravity", true);
+    }
+
     IntPtr hwnd = FindAntigravityWindow();
     if (hwnd == IntPtr.Zero) return "{\"ok\":false,\"error\":\"window_not_found\"}";
 
@@ -890,9 +1093,11 @@ public static class AntigravityVoiceBridge {
     if (cmd == "VOICE_MODE" || cmd == "MIC" || cmd == "RECORD_MIC") {
       string method;
       if (TryClickVoiceModeViaUia(hwnd, winRc, out method)) {
+        if (muteAg) { Thread.Sleep(120); SetProcessMute("Antigravity", true); }
         return "{\"ok\":true,\"method\":\"" + EscapeJson(method) + "\"}";
       }
       if (TryClickVoiceModeViaPixel(hwnd, winRc, out method)) {
+        if (muteAg) { Thread.Sleep(120); SetProcessMute("Antigravity", true); }
         return "{\"ok\":true,\"method\":\"" + EscapeJson(method) + "\"}";
       }
       return "{\"ok\":false,\"error\":\"voice_mode_button_not_found\"}";
@@ -913,7 +1118,8 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     $req = $line | ConvertFrom-Json
     $id = [int]$req.id
     $cmd = [string]$req.cmd
-    $rawJson = [AntigravityVoiceBridge]::Execute($cmd)
+    $muteAg = [bool]($req.PSObject.Properties['muteAg'] -and $req.muteAg)
+    $rawJson = [AntigravityVoiceBridge]::Execute($cmd, $muteAg)
     $parsed = $rawJson | ConvertFrom-Json
     $parsed | Add-Member -NotePropertyName id -NotePropertyValue $id -Force
     Write-Output ($parsed | ConvertTo-Json -Compress)

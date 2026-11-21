@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('fairyDesktop', {
     return () => ipcRenderer.removeListener('fairy:speak', handler);
   },
   setTtsEnabled: (enabled) => ipcRenderer.send('fairy:set-tts', Boolean(enabled)),
+  setAutoMute: (enabled) => ipcRenderer.send('fairy:set-auto-mute', Boolean(enabled)),
   speakText: (text) => ipcRenderer.invoke('fairy:speak-text', String(text || '')),
   notifyReady: () => ipcRenderer.send('fairy:ready'),
   getStartup: () => ipcRenderer.invoke('fairy:get-startup'),

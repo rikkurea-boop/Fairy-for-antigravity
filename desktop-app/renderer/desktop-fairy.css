@@ -73,6 +73,7 @@ html, body {
 }
 
 .fz3-layer[data-phase="dock"] .fz3-screen {
+  display: none !important;
   opacity: 0;
   filter: blur(7px);
   pointer-events: none;
@@ -387,7 +388,11 @@ html, body {
   transition: opacity 0.8s ease 0.3s;
 }
 
-.fz3-layer[data-phase="dock"][data-chrome="1"] .fz3-atmos { opacity: 0.72; }
+.fz3-layer[data-phase="dock"] .fz3-atmos,
+.fz3-layer[data-phase="dock"][data-chrome="1"] .fz3-atmos {
+  display: none !important;
+  opacity: 0;
+}
 
 .fz3-atmos-frame {
   position: absolute;

@@ -341,7 +341,7 @@
     let rects = null; // null = toàn màn hình (boot, greet, cài đặt)
     if (phase === 'dock' && settingsModal.classList.contains('hidden')) {
       rects = [];
-      const pad = dragState ? 96 : 36;
+      const pad = dragState ? 220 : 10;
       const els = [coreEl];
       if (!bubbleEl.classList.contains('hidden')) els.push(bubbleEl);
       for (const el of els) {
@@ -818,6 +818,9 @@
     }
     phase = nextPhase;
     layerEl.dataset.phase = nextPhase;
+    if (window.fairyDesktop && window.fairyDesktop.setPhase) {
+      window.fairyDesktop.setPhase(nextPhase);
+    }
 
     if (nextPhase === 'boot') {
       closeBubble();

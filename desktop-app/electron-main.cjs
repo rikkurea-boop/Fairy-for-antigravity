@@ -806,14 +806,49 @@ function applyAlwaysOnTop(win) {
       win.setHiddenInMissionControl(true);
     }
   } else {
-    win.setAlwaysOnTop(true, 'screen-saver');
+    win.setAlwaysOnTop(true, 'screen-saver', 1);
+  }
+}
+
+let overlayPhase = 'boot';
+let bootTopmostTimer = null;
+
+function updateBootTopmostLoop(nextPhase) {
+  overlayPhase = nextPhase === 'boot' || nextPhase === 'greet' ? nextPhase : 'dock';
+  if (bootTopmostTimer) {
+    clearInterval(bootTopmostTimer);
+    bootTopmostTimer = null;
+  }
+  if (!IS_WIN || IS_SMOKE_TEST || !mainWin || mainWin.isDestroyed()) return;
+  if (overlayPhase === 'boot' || overlayPhase === 'greet') {
+    const bounds = screen.getPrimaryDisplay().bounds;
+    mainWin.setBounds(bounds);
+    mainWin.setAlwaysOnTop(true, 'screen-saver', 1);
+    mainWin.moveTop();
+    bootTopmostTimer = setInterval(() => {
+      if (!mainWin || mainWin.isDestroyed()) {
+        clearInterval(bootTopmostTimer);
+        bootTopmostTimer = null;
+        return;
+      }
+      if (overlayPhase === 'boot' || overlayPhase === 'greet') {
+        try {
+          mainWin.setAlwaysOnTop(true, 'screen-saver', 1);
+          mainWin.moveTop();
+        } catch {}
+      }
+    }, 250);
   }
 }
 
 function showOverlayWindow(win, focusWindow = false) {
   if (!win || win.isDestroyed() || IS_SMOKE_TEST) return;
-  win.show();
-  if (focusWindow) {
+  if (typeof win.showInactive === 'function' && !focusWindow) {
+    win.showInactive();
+  } else {
+    win.show();
+  }
+  if (focusWindow && lastMainFocusable) {
     win.focus();
   }
   win.moveTop();
@@ -821,19 +856,20 @@ function showOverlayWindow(win, focusWindow = false) {
 }
 
 function createOverlayWindow(port) {
-  const workArea = screen.getPrimaryDisplay().workArea;
+  const fullBounds = screen.getPrimaryDisplay().bounds;
   const icoPath = join(ROOT_DIR, 'fairy.ico');
   const iconFile = existsSync(icoPath) ? icoPath : join(ASSETS_DIR, 'icon-180.png');
   mainWin = new BrowserWindow({
-    x: workArea.x,
-    y: workArea.y,
-    width: workArea.width,
-    height: workArea.height,
+    x: fullBounds.x,
+    y: fullBounds.y,
+    width: fullBounds.width,
+    height: fullBounds.height,
     icon: iconFile,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
     alwaysOnTop: true,
+    focusable: !IS_WIN,
     skipTaskbar: true,
     resizable: false,
     movable: false,
@@ -857,7 +893,8 @@ function createOverlayWindow(port) {
   }
 
   mainWin.once('ready-to-show', () => {
-    showOverlayWindow(mainWin, true);
+    showOverlayWindow(mainWin, !IS_WIN);
+    updateBootTopmostLoop(overlayPhase);
   });
 
   mainWin.webContents.on('did-finish-load', () => {
@@ -866,8 +903,8 @@ function createOverlayWindow(port) {
 
   screen.on('display-metrics-changed', () => {
     if (!mainWin || mainWin.isDestroyed()) return;
-    const nextArea = screen.getPrimaryDisplay().workArea;
-    mainWin.setBounds(nextArea);
+    const nextBounds = screen.getPrimaryDisplay().bounds;
+    mainWin.setBounds(nextBounds);
   });
 
   mainWin.loadURL(`http://127.0.0.1:${port}/`);
@@ -915,10 +952,20 @@ app.on('activate', () => {
 
 ipcMain.on('fairy:set-ignore-mouse', (_ev, ignore) => {
   if (!mainWin || mainWin.isDestroyed()) return;
+  if (IS_WIN) {
+    // Luôn giữ setIgnoreMouseEvents(false) trên Windows để tránh bật WS_EX_LAYERED | WS_EX_TRANSPARENT;
+    // vùng ngoài mắt & bubble tự động xuyên chuột hoàn toàn qua SetWindowRgn (setShape).
+    mainWin.setIgnoreMouseEvents(false);
+    return;
+  }
   mainWin.setIgnoreMouseEvents(Boolean(ignore), { forward: true });
 });
 
-let lastMainFocusable = true;
+ipcMain.on('fairy:set-phase', (_ev, nextPhase) => {
+  updateBootTopmostLoop(String(nextPhase || 'dock'));
+});
+
+let lastMainFocusable = !IS_WIN;
 ipcMain.on('fairy:set-focusable', (_ev, focusable) => {
   if (!mainWin || mainWin.isDestroyed() || !IS_WIN || IS_SMOKE_TEST) return;
   try {

@@ -15,10 +15,13 @@ const {
 } = require('electron');
 const { execFileSync, spawn } = require('node:child_process');
 const {
+  closeSync,
   createReadStream,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   readdirSync,
   statSync,
   watch,
@@ -92,6 +95,9 @@ let tray = null;
 let mediaServer = null;
 let stateWatcher = null;
 let voiceWatcher = null;
+let transcriptWatcher = null;
+let watchedTranscriptDir = '';
+let lastObservedTranscriptDir = '';
 let pollTimer = null;
 let lastStateKey = '';
 
@@ -229,6 +235,27 @@ function extractTalkerEntriesFromUserContent(raw) {
   }));
 }
 
+function readTailUtf8(filePath, maxBytes = 32768) {
+  const st = statSync(filePath);
+  const size = Number(st.size) || 0;
+  if (size <= 0) return { text: '', mtimeMs: st.mtimeMs, size: 0 };
+  const readLen = Math.min(maxBytes, size);
+  const start = Math.max(0, size - readLen);
+  const buf = Buffer.allocUnsafe(readLen);
+  const fd = openSync(filePath, 'r');
+  try {
+    let offset = 0;
+    while (offset < readLen) {
+      const n = readSync(fd, buf, offset, readLen - offset, start + offset);
+      if (n <= 0) break;
+      offset += n;
+    }
+    return { text: buf.subarray(0, offset).toString('utf-8'), mtimeMs: st.mtimeMs, size };
+  } finally {
+    try { closeSync(fd); } catch {}
+  }
+}
+
 function mergeLatestCompleteTalker(talkerListsNewestFirst) {
   const chrono = [];
   for (let i = talkerListsNewestFirst.length - 1; i >= 0; i -= 1) {
@@ -236,27 +263,40 @@ function mergeLatestCompleteTalker(talkerListsNewestFirst) {
   }
   if (!chrono.length) return { liveTalkerTime: '', liveTalkerText: '' };
 
+  const END_RE = /^([\s\S]*[.!?…]["”']?)(?:\s+([\s\S]*))?$/;
   const tail = chrono.at(-1);
   if (!tail || !tail.text) return { liveTalkerTime: '', liveTalkerText: '' };
-  if (!/[.!?…]["”']?\s*$/.test(tail.text)) {
-    return { liveTalkerTime: '', liveTalkerText: '' };
+
+  const mTail = END_RE.exec(tail.text);
+  let ts = tail.ts;
+
+  if (mTail && mTail[1]) {
+    const completeInTail = mTail[1].trim();
+    const firstTerm = /^([^.!?…]*[.!?…]["”']?)(?:\s+([\s\S]*))?$/.exec(completeInTail);
+    const prefix = firstTerm ? firstTerm[1].trim() : completeInTail;
+    const rest = firstTerm && firstTerm[2] ? firstTerm[2].trim() : '';
+
+    const parts = [];
+    for (let i = chrono.length - 2; i >= 0; i -= 1) {
+      const prevText = chrono[i]?.text || '';
+      if (!prevText) break;
+      const mPrev = END_RE.exec(prevText);
+      const incompleteSuffix = mPrev ? (mPrev[2] || '').trim() : prevText.trim();
+      if (!incompleteSuffix) break;
+      parts.unshift(incompleteSuffix.replace(/-\s*$/, '').trim() + (incompleteSuffix.trimEnd().endsWith('-') ? '' : ' '));
+      ts = chrono[i].ts || ts;
+      if (mPrev) break;
+    }
+
+    const joinedFirst = parts.length ? `${parts.join('')}${prefix}`.trim() : prefix;
+    const merged = rest ? `${joinedFirst} ${rest}` : joinedFirst;
+    return {
+      liveTalkerTime: ts,
+      liveTalkerText: merged.slice(0, 340),
+    };
   }
 
-  let merged = tail.text;
-  let ts = tail.ts;
-  for (let i = chrono.length - 2; i >= 0; i -= 1) {
-    const prev = chrono[i];
-    if (!prev || !prev.text || /[.!?…]["”']?\s*$/.test(prev.text)) break;
-    const prevClean = prev.text.replace(/-\s*$/, '').trim();
-    if (!prevClean) break;
-    const joiner = prev.text.trimEnd().endsWith('-') ? '' : ' ';
-    merged = `${prevClean}${joiner}${merged}`.trim();
-    ts = prev.ts || ts;
-  }
-  return {
-    liveTalkerTime: ts,
-    liveTalkerText: merged.slice(0, 340),
-  };
+  return { liveTalkerTime: '', liveTalkerText: '' };
 }
 
 function cleanUserTranscriptText(raw) {
@@ -282,23 +322,23 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
   for (const logPath of candidates) {
     try {
       if (!existsSync(logPath)) continue;
-      const st = statSync(logPath);
-      const cacheKey = `${st.mtimeMs}:${st.size}`;
+      const { text: tailText, mtimeMs, size } = readTailUtf8(logPath, 32768);
+      lastObservedTranscriptDir = dirname(logPath);
+      const cacheKey = `${mtimeMs}:${size}`;
       const cached = dialogueCache.get(logPath);
       if (cached && cached.key === cacheKey) return cached.data;
 
-      const readSize = Math.min(24 * 1024, st.size);
-      const start = Math.max(0, st.size - readSize);
-      const buf = readFileSync(logPath);
-      const lines = buf.subarray(start).toString('utf-8').split('\n').filter((l) => l.trim());
+      const lines = tailText.split('\n').filter((l) => l.trim());
       let userText = '';
       let modelText = '';
+      let modelRawText = '';
       let hasStepError = false;
       const recentTalkerLists = [];
       for (let i = lines.length - 1; i >= 0; i -= 1) {
         try {
           const item = JSON.parse(lines[i]);
           if (!modelText && item.type === 'PLANNER_RESPONSE' && typeof item.content === 'string' && item.content.trim()) {
+            modelRawText = item.content.trim().slice(0, 900);
             modelText = item.content.replace(/\s+/g, ' ').trim().slice(0, 500);
           }
           if (item.type === 'USER_INPUT' && typeof item.content === 'string' && item.content.trim()) {
@@ -319,14 +359,14 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
         }
       }
       const { liveTalkerText, liveTalkerTime } = mergeLatestCompleteTalker(recentTalkerLists);
-      const data = { userText, modelText, liveTalkerText, liveTalkerTime, hasStepError, mtimeMs: st.mtimeMs };
+      const data = { userText, modelText, modelRawText, liveTalkerText, liveTalkerTime, hasStepError, mtimeMs };
       dialogueCache.set(logPath, { key: cacheKey, data });
       return data;
     } catch {
       // Try next candidate.
     }
   }
-  return { userText: '', modelText: '', liveTalkerText: '', liveTalkerTime: '', hasStepError: false, mtimeMs: 0 };
+  return { userText: '', modelText: '', modelRawText: '', liveTalkerText: '', liveTalkerTime: '', hasStepError: false, mtimeMs: 0 };
 }
 
 const SLEEP_RE = /(\b(đi ngủ|ngủ ngon|ngủ đây|good\s*night|ngủ thôi)\b|buồn ngủ|thức khuya quá)/i;
@@ -723,7 +763,7 @@ function readSnapshot() {
     mood: analysis.mood,
     emotionMood: analysis.emotionMood,
     dialogueQuip: analysis.dialogueQuip,
-    lastReplySpeech: cleanTextForSpeech(dialogue.modelText || ''),
+    lastReplySpeech: cleanTextForSpeech(dialogue.modelRawText || dialogue.modelText || ''),
     voiceActive: Boolean(voiceChat.voiceActive),
     voiceSessionEnded: Boolean(voiceChat.voiceSessionEnded),
     lastVoiceText: voiceChat.lastVoiceText || '',
@@ -759,11 +799,18 @@ function cleanTextForSpeech(raw) {
   s = s.replace(/[A-Za-z]:\\[^\s`'",)]+/g, ' ');
   s = s.replace(/`([^`]{1,40})`/g, '$1');
   s = s.replace(/`[^`]+`/g, ' ');
-  s = s.replace(/^\s*—\s*Ting~\s*/i, 'Ting. ');
+  s = s.replace(/^\s*—\s*Ting~\s*/i, '');
+  s = s.replace(/\|[^\n]+\|/g, ' ');
+  s = s.replace(/^\s*#{1,6}\s*\d*\.?\s*/gm, '');
+  s = s.replace(/^\s*[-*•]\s+/gm, '');
+  s = s.replace(/:\s*\r?\n+/g, '. ');
+  s = s.replace(/\r?\n+/g, '. ');
   s = s.replace(/[*#_~>|`]/g, ' ');
+  s = s.replace(/\.{2,}/g, '.');
+  s = s.replace(/\s*\.\s*/g, '. ');
   s = s.replace(/\s+/g, ' ').trim();
   if (!s) return '';
-  const parts = s.split(/(?<=[.!?])\s+/).filter((p) => p.trim().length > 2);
+  const parts = s.split(/(?<=[.!?])\s+/).filter((p) => p.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 3);
   let picked = '';
   for (const p of parts) {
     if (picked && picked.length + p.length + 1 > 320) break;
@@ -817,6 +864,28 @@ function startTelemetryWatcher() {
         });
       } catch {
         voiceWatcher = null;
+      }
+    }
+    const targetLogDir = lastObservedTranscriptDir;
+    if (targetLogDir && targetLogDir !== watchedTranscriptDir && existsSync(targetLogDir)) {
+      if (transcriptWatcher) {
+        try { transcriptWatcher.close(); } catch {}
+        transcriptWatcher = null;
+      }
+      try {
+        watchedTranscriptDir = targetLogDir;
+        transcriptWatcher = watch(targetLogDir, { persistent: false }, (_ev, file) => {
+          if (file && file !== 'transcript.jsonl') return;
+          schedulePush();
+        });
+        transcriptWatcher.on('error', () => {
+          try { transcriptWatcher.close(); } catch {}
+          transcriptWatcher = null;
+          watchedTranscriptDir = '';
+        });
+      } catch {
+        transcriptWatcher = null;
+        watchedTranscriptDir = '';
       }
     }
   };
@@ -1716,6 +1785,13 @@ app.on('will-quit', () => {
   if (voiceWatcher) {
     try {
       voiceWatcher.close();
+    } catch {
+      // Ignore.
+    }
+  }
+  if (transcriptWatcher) {
+    try {
+      transcriptWatcher.close();
     } catch {
       // Ignore.
     }

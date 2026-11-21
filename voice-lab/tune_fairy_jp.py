@@ -287,19 +287,27 @@ def render_independent_formant_android(
         f"[c0]highpass=f=300,lowpass=f=3500,adelay={comb_samples}S[comb];"
         f"[h1]rubberband=pitch={round(factor, 4)}:formant=preserved,highpass=f=240,lowpass=f=3800,adelay=8[u1];"
         f"[h2]rubberband=pitch={round(1.0 / factor, 4)}:formant=preserved,highpass=f=240,lowpass=f=3800,adelay=13[u2];"
-        f"[dry][comb][u1][u2]amix=inputs=4:duration=longest:weights='0.82 {comb_weight} {u_each} {u_each}':normalize=0,"
-        "loudnorm=I=-16:TP=-1.5:LRA=11[out]"
+        f"[dry][comb][u1][u2]amix=inputs=4:duration=longest:weights='0.82 {comb_weight} {u_each} {u_each}':normalize=0[out]"
     )
 
-    subprocess.run(
+    proc = subprocess.run(
         [
-            FFMPEG, "-y", "-v", "error",
+            FFMPEG, "-v", "error",
             "-f", "f32le", "-ac", "1", "-ar", str(sr), "-i", "pipe:0",
-            "-filter_complex", fc, "-map", "[out]", "-ac", "1", "-ar", str(sr), out_path,
+            "-filter_complex", fc, "-map", "[out]", "-f", "f32le", "-ac", "1", "-ar", str(sr), "pipe:1",
         ],
         input=y_tight.tobytes(),
+        capture_output=True,
         check=True,
     )
+    y_out = np.frombuffer(proc.stdout, dtype=np.float32).copy()
+    rms_out = float(np.sqrt(np.mean(y_out ** 2) + 1e-12)) if len(y_out) else 0.0
+    if rms_out > 1e-5:
+        y_out *= 0.145 / rms_out
+    peak = float(np.max(np.abs(y_out))) if len(y_out) else 0.0
+    if peak > 0.89:
+        y_out = (np.tanh(y_out / 0.89) * 0.89).astype(np.float32)
+    write_mono_wav(out_path, y_out, sr=sr)
 
 
 FAIRY_LOCKED_PRESET = {

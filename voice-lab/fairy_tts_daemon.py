@@ -100,13 +100,17 @@ def main():
     with contextlib.redirect_stdout(sys.stderr):
         y_src = tf.load_mono_f32(ref_src)
         tts, voice_id = tf.build_fairy_ref_tts(y_src, tmpd)
-        # Warm up NeuCodec/LLM kernel caches once so first live reply runs fast
-        try:
-            _ = tf.synthesize_clauses(tts, voice_id, ["Sẵn sàng."])
-        except Exception:
-            pass
+        # Warm up CUDA graphs, NeuCodec, and DSP pipeline once so first reply runs at peak speed
+        warmup_out = os.path.join(tmpd, "warmup.wav")
+        for idx_w, phrase in enumerate(("Sẵn sàng.", "Hệ thống đã hoàn tất cấu hình CUDA, mọi chỉ số đều đạt mức hoàn hảo.")):
+            try:
+                y_w = tts.infer(phrase, voice=voice_id, temperature=0.58, top_k=20, silence_p=0.06)
+                if idx_w == 1:
+                    tf.render_with_locked_preset(tf.trim_silence_taper(y_w.astype(tf.np.float32), sr=tf.SR), warmup_out)
+            except Exception:
+                pass
 
-    emit_json({"ready": True})
+    emit_json({"ready": True, "backend": getattr(tts, "backend", "auto")})
 
     for raw_line in sys.stdin:
         line = raw_line.strip()
@@ -132,7 +136,9 @@ def main():
                 tmp_out = f"{chunk_out}.tmp.wav"
                 with contextlib.redirect_stdout(sys.stderr):
                     y_raw = tts.infer(clause, voice=voice_id, temperature=0.58, top_k=20, silence_p=0.06)
-                    y_seg = tf.trim_silence_taper(y_raw.astype(tf.np.float32), sr=tf.SR)
+                    y_seg = tf.trim_silence_taper(y_raw.astype(tf.np.float32), sr=tf.SR, pad_ms=45)
+                    # Leave 120ms tail buffer so rubberband/vocoder windows never truncate the final syllable
+                    y_seg = tf.np.concatenate([y_seg, tf.np.zeros(int(0.120 * tf.SR), dtype=tf.np.float32)])
                     tf.render_with_locked_preset(y_seg, tmp_out)
                 os.replace(tmp_out, chunk_out)
                 chunk_paths.append(chunk_out)

@@ -855,7 +855,7 @@
   }
 
   function playLiveSpeakAudio(payload) {
-    if (!payload || !payload.url || !prefs.tts || phase !== 'dock') return;
+    if (!payload || !payload.url || !prefs.tts || phase === 'boot') return;
     const vol = Math.min(1, Math.max(0, prefs.volume / 100));
     if (vol <= 0) return;
     stopGreetingVoice();
@@ -867,7 +867,7 @@
     audio.addEventListener('playing', () => {
       if (liveSpeakAudio !== audio) return;
       setTalkingState(true, 20000);
-      if (payload.text && (bubbleEl.classList.contains('hidden') || bubbleEl.dataset.mode === 'toast' || bubbleEl.dataset.mode === 'turn')) {
+      if (phase === 'dock' && payload.text && (bubbleEl.classList.contains('hidden') || bubbleEl.dataset.mode === 'toast' || bubbleEl.dataset.mode === 'turn')) {
         openBubble('toast', `— ${payload.text}`, 8000);
       }
     });
@@ -1025,6 +1025,7 @@
     }
   }
 
+  let lastToastSpoken = '';
   function openConversationToast() {
     lastInteractionAt = Date.now();
     if (!bubbleEl.classList.contains('hidden')) {
@@ -1034,6 +1035,10 @@
     const line = liveState.dialogueQuip || QUIPS[quipIdx++ % QUIPS.length];
     openBubble('toast', line, 4500);
     playStateTransition();
+    if (prefs.tts && !liveSpeakAudio && !greetAudio && line !== lastToastSpoken && window.fairyDesktop && window.fairyDesktop.speakText) {
+      lastToastSpoken = line;
+      window.fairyDesktop.speakText(line).catch(() => {});
+    }
   }
 
   async function executeDoubleClickAction() {

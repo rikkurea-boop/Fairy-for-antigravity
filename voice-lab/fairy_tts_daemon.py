@@ -47,31 +47,32 @@ def emit_json(payload: dict):
     REAL_STDOUT.flush()
 
 
-def split_speech_clauses(raw: str, max_chars: int = 220, max_clauses: int = 3):
+def split_speech_clauses(raw: str, max_chars: int = 155, max_clauses: int = 1):
     text = re.sub(r"\s+", " ", str(raw or "")).strip()
     if not text:
         return []
     parts = [p.strip(" -—–~") for p in re.split(r"(?<=[.!?])\s+|\n+", text)]
-    clauses = []
+    merged = []
     total_len = 0
     for part in parts:
         if not part or not re.search(r"[\wÀ-ỹ]", part, re.UNICODE):
             continue
-        if len(part) > 130:
+        if len(part) > max_chars:
             part = re.split(r"[,;]\s*", part)[0].strip()
         if not part:
             continue
-        if len(part) > 140:
-            part = part[:137].rstrip() + "."
+        if len(part) > max_chars:
+            part = part[: max_chars - 3].rstrip() + "."
         if not re.search(r"[.!?]$", part):
             part += "."
-        if clauses and total_len + len(part) > max_chars:
+        if merged and total_len + len(part) + 1 > max_chars:
             break
-        clauses.append(part)
-        total_len += len(part)
-        if len(clauses) >= max_clauses:
-            break
-    return clauses
+        merged.append(part)
+        total_len += len(part) + 1
+    if not merged:
+        return []
+    single = " ".join(merged)
+    return [single][:max_clauses] if max_clauses == 1 else merged[:max_clauses]
 
 
 def main():
@@ -86,6 +87,11 @@ def main():
     with contextlib.redirect_stdout(sys.stderr):
         y_src = tf.load_mono_f32(ref_src)
         tts, voice_id = tf.build_fairy_ref_tts(y_src, tmpd)
+        # Warm up NeuCodec/LLM kernel caches once so first live reply runs fast
+        try:
+            _ = tf.synthesize_clauses(tts, voice_id, ["Sẵn sàng."])
+        except Exception:
+            pass
 
     emit_json({"ready": True})
 

@@ -312,20 +312,30 @@ function parseVoiceChatFile(filePath, now = Date.now(), maxStaleMs = Infinity) {
     const lastChat = chats.at(-1);
     if (!lastChat) return null;
 
-    const lines = Array.isArray(lastChat.lines) ? lastChat.lines : [];
     let lastVoiceLine = null;
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      const item = lines[i];
-      if (item && item.role === 'ROLE_VOICE' && typeof item.text === 'string' && item.text.trim()) {
-        lastVoiceLine = item;
-        break;
+    let ownerChat = lastChat;
+    for (let c = chats.length - 1; c >= 0 && !lastVoiceLine; c -= 1) {
+      const chat = chats[c];
+      const lines = Array.isArray(chat?.lines) ? chat.lines : [];
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const item = lines[i];
+        if (item && item.role === 'ROLE_VOICE' && typeof item.text === 'string' && item.text.trim()) {
+          lastVoiceLine = item;
+          ownerChat = chat;
+          break;
+        }
       }
     }
-    if (!lastVoiceLine && lines.length > 0) {
-      for (let i = lines.length - 1; i >= 0; i -= 1) {
-        if (lines[i] && typeof lines[i].text === 'string' && lines[i].text.trim()) {
-          lastVoiceLine = lines[i];
-          break;
+    if (!lastVoiceLine) {
+      for (let c = chats.length - 1; c >= 0 && !lastVoiceLine; c -= 1) {
+        const chat = chats[c];
+        const lines = Array.isArray(chat?.lines) ? chat.lines : [];
+        for (let i = lines.length - 1; i >= 0; i -= 1) {
+          if (lines[i] && typeof lines[i].text === 'string' && lines[i].text.trim()) {
+            lastVoiceLine = lines[i];
+            ownerChat = chat;
+            break;
+          }
         }
       }
     }
@@ -333,7 +343,8 @@ function parseVoiceChatFile(filePath, now = Date.now(), maxStaleMs = Infinity) {
     const startedAtMs = lastChat.startedAt ? Date.parse(lastChat.startedAt) || 0 : 0;
     const stoppedAtMs = lastChat.stoppedAt ? Date.parse(lastChat.stoppedAt) || 0 : 0;
     const lastVoiceText = String(lastVoiceLine?.text || '').replace(/\s+/g, ' ').trim().slice(0, 260);
-    const lastVoiceTime = (lastVoiceLine?.time ? Date.parse(lastVoiceLine.time) : 0) || startedAtMs || st.mtimeMs;
+    const ownerStartMs = ownerChat?.startedAt ? Date.parse(ownerChat.startedAt) || 0 : 0;
+    const lastVoiceTime = (lastVoiceLine?.time ? Date.parse(lastVoiceLine.time) : 0) || ownerStartMs || startedAtMs || st.mtimeMs;
     const isRunning = Boolean(startedAtMs > 0 && !stoppedAtMs && now - Math.max(startedAtMs, lastVoiceTime, st.mtimeMs) < 120000);
     const isRecentLine = Boolean(lastVoiceText) && lastVoiceTime > 0 && now - lastVoiceTime < 25000 && (!stoppedAtMs || stoppedAtMs < lastVoiceTime);
 
@@ -623,6 +634,7 @@ function readSnapshot() {
       lastReplySpeech: '',
       voiceActive: false,
       lastVoiceText: '',
+      lastVoiceTime: 0,
       hybridConnected,
       sidecarPort,
       workspaceUris: sidecarEndpoint.workspaceUris || [],
@@ -661,6 +673,7 @@ function readSnapshot() {
     lastReplySpeech: cleanTextForSpeech(dialogue.modelText || ''),
     voiceActive: Boolean(voiceChat.voiceActive),
     lastVoiceText: voiceChat.lastVoiceText || '',
+    lastVoiceTime: Number(voiceChat.lastVoiceTime) || 0,
     hybridConnected,
     sidecarPort,
     workspaceUris: sidecarEndpoint.workspaceUris || [],
@@ -1340,9 +1353,11 @@ let ttsEnabled = true;
 let ttsBusy = false;
 let ttsQueuedText = '';
 let ttsBaselineReady = false;
-let lastSpokenKey = '';
+let lastSpokenVoiceKey = '';
+let lastSpokenStopKey = '';
 let lastSpokenText = '';
-let speechDebounceTimer = null;
+let voiceDebounceTimer = null;
+let stopDebounceTimer = null;
 
 function rejectPendingTts(reason) {
   for (const [id, entry] of ttsPending.entries()) {
@@ -1468,39 +1483,61 @@ async function enqueueFairySpeech(text) {
   return lastRes;
 }
 
-function buildSpeechCandidate(snap) {
-  if (!snap) return { key: '', text: '', delayMs: 450 };
-  if (snap.lastEvent === 'Stop' || snap.mood === 'done') {
-    const txt = snap.lastReplySpeech || cleanTextForSpeech(snap.dialogueQuip || '');
-    const stamp = snap.doneAt || snap.updatedAt || '';
-    return txt ? { key: `stop:${snap.conversationId}:${stamp}:${txt.slice(0, 60)}`, text: txt, delayMs: 450 } : { key: '', text: '', delayMs: 450 };
-  }
-  if (snap.lastVoiceText && /[.!?]\s*$/.test(String(snap.lastVoiceText).trim())) {
-    const txt = cleanTextForSpeech(snap.lastVoiceText);
-    return txt ? { key: `voice:${snap.conversationId}:${txt.slice(0, 80)}`, text: txt, delayMs: 1100 } : { key: '', text: '', delayMs: 1100 };
-  }
-  return { key: '', text: '', delayMs: 450 };
+function getVoiceCandidate(snap) {
+  if (!snap || !snap.lastVoiceText) return { key: '', text: '' };
+  const text = cleanTextForSpeech(snap.lastVoiceText);
+  if (!text) return { key: '', text: '' };
+  const stamp = snap.lastVoiceTime || snap.updatedAt || '';
+  return { key: `${snap.conversationId}:${stamp}:${text.slice(0, 80)}`, text };
+}
+
+function getStopCandidate(snap) {
+  if (!snap || (snap.lastEvent !== 'Stop' && snap.mood !== 'done')) return { key: '', text: '' };
+  const text = snap.lastReplySpeech || cleanTextForSpeech(snap.dialogueQuip || '');
+  if (!text) return { key: '', text: '' };
+  const stamp = snap.doneAt || snap.updatedAt || '';
+  return { key: `${snap.conversationId}:${stamp}:${text.slice(0, 60)}`, text };
 }
 
 function scheduleSpeechFromSnapshot(snap) {
-  const initial = buildSpeechCandidate(snap);
+  const voiceInit = getVoiceCandidate(snap);
+  const stopInit = getStopCandidate(snap);
   if (!ttsBaselineReady) {
     ttsBaselineReady = true;
-    lastSpokenKey = initial.key;
-    lastSpokenText = initial.text;
+    lastSpokenVoiceKey = voiceInit.key;
+    lastSpokenStopKey = stopInit.key;
+    lastSpokenText = voiceInit.text || stopInit.text || '';
     return;
   }
-  if (!ttsEnabled || IS_SMOKE_TEST || !initial.key || initial.key === lastSpokenKey) return;
-  clearTimeout(speechDebounceTimer);
-  speechDebounceTimer = setTimeout(() => {
-    const latest = readSnapshot();
-    const cand = buildSpeechCandidate(latest);
-    if (!ttsEnabled || !cand.key || cand.key === lastSpokenKey) return;
-    if (cand.text && cand.text === lastSpokenText && cand.key.startsWith('voice:')) return;
-    lastSpokenKey = cand.key;
-    lastSpokenText = cand.text;
-    enqueueFairySpeech(cand.text).catch(() => {});
-  }, initial.delayMs);
+  if (!ttsEnabled || IS_SMOKE_TEST) return;
+
+  if (voiceInit.key && voiceInit.key !== lastSpokenVoiceKey) {
+    clearTimeout(voiceDebounceTimer);
+    voiceDebounceTimer = setTimeout(() => {
+      const latest = readSnapshot();
+      const cand = getVoiceCandidate(latest);
+      if (!ttsEnabled || !cand.key || cand.key === lastSpokenVoiceKey) return;
+      lastSpokenVoiceKey = cand.key;
+      if (cand.text && cand.text !== lastSpokenText) {
+        lastSpokenText = cand.text;
+        enqueueFairySpeech(cand.text).catch(() => {});
+      }
+    }, 60);
+  }
+
+  if (stopInit.key && stopInit.key !== lastSpokenStopKey) {
+    clearTimeout(stopDebounceTimer);
+    stopDebounceTimer = setTimeout(() => {
+      const latest = readSnapshot();
+      const cand = getStopCandidate(latest);
+      if (!ttsEnabled || !cand.key || cand.key === lastSpokenStopKey) return;
+      lastSpokenStopKey = cand.key;
+      if (cand.text && cand.text !== lastSpokenText) {
+        lastSpokenText = cand.text;
+        enqueueFairySpeech(cand.text).catch(() => {});
+      }
+    }, 120);
+  }
 }
 
 ipcMain.on('fairy:set-tts', (_ev, enabled) => {
@@ -1555,7 +1592,8 @@ app.whenReady().then(async () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   clearInterval(pollTimer);
-  clearTimeout(speechDebounceTimer);
+  clearTimeout(voiceDebounceTimer);
+  clearTimeout(stopDebounceTimer);
   if (ttsWorker) {
     try {
       ttsWorker.kill();

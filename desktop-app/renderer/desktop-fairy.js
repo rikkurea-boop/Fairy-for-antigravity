@@ -891,6 +891,7 @@
     stopGreetingVoice();
     stopLiveSpeakAudio(false);
 
+    activeSpeakReqId = Number(payload.reqId) || 0;
     const audio = payload.audio || new Audio(payload.url);
     liveSpeakAudio = audio;
     audio.volume = vol;
@@ -914,6 +915,7 @@
       if (next && prefs.tts && phase === 'dock' && dockSettled) {
         startSpeakChunkPlayback(next);
       } else {
+        activeSpeakReqId = 0;
         setTalkingState(false, 0);
       }
     };
@@ -925,30 +927,23 @@
   function playLiveSpeakAudio(payload) {
     if (!payload || !payload.url || !prefs.tts) return;
     if (phase === 'boot' || phase === 'greet' || !dockSettled) {
-      if ((Number(payload.chunkIndex) || 0) === 0) pendingSpeakQueue = [payload];
-      else pendingSpeakQueue.push(payload);
-      return;
-    }
-    const reqId = Number(payload.reqId) || 0;
-    const chunkIdx = Number(payload.chunkIndex) || 0;
-    const isFollowupChunk = chunkIdx > 0 && reqId > 0 && reqId === activeSpeakReqId;
-
-    if (!isFollowupChunk) {
-      stopLiveSpeakAudio(true);
-      activeSpeakReqId = reqId;
-      startSpeakChunkPlayback(payload);
+      pendingSpeakQueue.push(payload);
+      if (pendingSpeakQueue.length > 16) pendingSpeakQueue.shift();
       return;
     }
 
+    // Xếp nối tiếp vào hàng đợi nếu câu hiện tại vẫn đang phát để tránh cắt ngang giữa chừng.
     if (liveSpeakAudio && !liveSpeakAudio.ended) {
       const preAudio = new Audio(payload.url);
       preAudio.preload = 'auto';
       preAudio.volume = Math.min(1, Math.max(0, prefs.volume / 100));
       try { preAudio.load(); } catch {}
       speakQueue.push({ ...payload, audio: preAudio });
-    } else {
-      startSpeakChunkPlayback(payload);
+      if (speakQueue.length > 16) speakQueue.shift();
+      return;
     }
+
+    startSpeakChunkPlayback(payload);
   }
 
   function playGreetingVoice() {

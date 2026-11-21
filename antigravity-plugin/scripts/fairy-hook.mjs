@@ -151,11 +151,20 @@ function mergeTalkerEntries(entries) {
     return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
   }
 
-  // Luôn lấy lượt talker mới nhất, tuyệt đối không lùi về lượt cũ khi câu mới bị cắt ngang.
+  if (mergedItems.length >= 2 && !mergedItems[mergedItems.length - 1].complete && mergedItems[mergedItems.length - 2].complete) {
+    const prev = mergedItems[mergedItems.length - 2];
+    const last = mergedItems[mergedItems.length - 1];
+    const combined = `${prev.text} ${last.text}`.trim();
+    return {
+      liveTalkerTime: last.ts || prev.ts,
+      liveTalkerText: combined.slice(0, 680),
+      liveTalkerComplete: false,
+    };
+  }
   const chosen = mergedItems[mergedItems.length - 1];
   return {
     liveTalkerTime: chosen.ts,
-    liveTalkerText: chosen.text.slice(0, 340),
+    liveTalkerText: chosen.text.slice(0, 680),
     liveTalkerComplete: Boolean(chosen.complete),
   };
 }

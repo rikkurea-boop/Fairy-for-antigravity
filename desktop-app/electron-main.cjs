@@ -472,28 +472,34 @@ function computeEffectiveMood(entry, now) {
   return raw;
 }
 
-const B_L = '(?:^|[\\s,.;:!?("“-])';
+const B_L = '(?:^|[\\s,.;:!?("“—-])';
 const B_R = '(?=$|[\\s,.;:!?)”"-])';
 const USER_SPEECH_FILTER_RE = new RegExp(
   '(\\?\\s*$|' +
   B_L + '(?:' +
-    'giúp\\s+tôi|cho\\s+tôi|của\\s+tôi|của\\s+mình|ý\\s+tôi|nhưng\\s+mà|nếu\\s+mà|với\\s+cả|à\\s+trước|trước\\s+tôi|' +
+    'giúp\\s+tôi|cho\\s+tôi|của\\s+tôi|của\\s+mình|ý\\s+tôi|nhưng\\s+mà|nếu\\s+mà|với\\s+cả|à\\s+trước|trước\\s+tôi|sao\\s+tôi|tại\\s+sao|' +
     'gửi\\s+bạn|gửi\\s+cho\\s+bạn|hãy\\s+kiểm\\s+tra|cho\\s+thấy\\s+(?:fairy|ferry)|ferry\\s+vẫn|khá\\s+là\\s+ngắt|kiểu\\s+nó\\s+bị|' +
-    'tôi\\s+(?:muốn|thấy|cảm\\s+giác|nghĩ|đang\\s+nghĩ|đang\\s+thử|đang\\s+test|đang\\s+thắc\\s+mắc|đang\\s+bị|không\\s+thấy|không\\s+nghĩ|không\\s+nghe|có\\s+gửi|vừa\\s+gửi|chỉ\\s+cần|nhớ\\s+là|bảo\\s+là|cam\\s+kết|test\\s+thử)|' +
-    'bạn\\s+(?:thử|hãy|làm|xóa|tìm|kiểm\\s+tra|đã\\s+tìm|đã\\s+có)|' +
+    'tôi\\s+(?:muốn|thấy|cảm\\s+giác|nghĩ|chỉ\\s+hỏi|đã\\s+chọn|đồng\\s+ý|vẫn\\s+(?:chưa|không|thấy)|đang\\s+(?:nghĩ|thử|test|thắc\\s+mắc|bị|xài)|không\\s+(?:thấy|nghĩ|nghe|hiểu)|có\\s+gửi|vừa\\s+gửi|chỉ\\s+cần|nhớ\\s+là|bảo\\s+là|cam\\s+kết|test\\s+thử|xác\\s+nhận|đưa\\s+đường\\s+dẫn|kiểm\\s+tra)|' +
+    'vậy\\s+để\\s+tôi|chúng\\s+ta\\s+chỉ\\s+chỉnh\\s+sửa|bao\\s+giờ\\s+tôi\\s+bảo|' +
+    'bạn\\s+(?:thử|hãy|làm|xóa|tìm|kiểm\\s+tra|đã\\s+tìm|đã\\s+có|tiến\\s+hành|update)|' +
     'fairy\\s+(?:nó|bị|chưa|còn|mới\\s+chỉ|vừa\\s+mới|nãy|vẫn\\s+(?:bị|không|chưa|đang\\s+bị))|' +
-    'được\\s+không|đúng\\s+không|phải\\s+không|có\\s+thể\\s+dùng\\s+cái\\s+này\\s+không|nhé|nhỉ' +
+    'dùng\\s+trực\\s+tiếp\\s+trên|cửa\\s+sổ\\s+tab|pop-?up\\s+xin\\s+quyền|bản\\s+backup\\s+đúng\\s+không|thêm\\s+cái|với\\s+cái|' +
+    'được\\s+không|đúng\\s+không|phải\\s+không|có\\s+thể\\s+dùng\\s+cái\\s+này\\s+không|nhé|nhỉ|thì\\s+mới' +
   ')' + B_R + ')',
   'i'
 );
 const AI_SPEECH_FILTER_RE = new RegExp(
   B_L + '(?:' +
-    'ngài|master|' +
-    'tôi\\s+(?:sẽ|đang|đã|xác\\s+nhận\\s+(?:chưa|không)|hiểu|rất\\s+vui|ghi\\s+nhận|tìm\\s+thấy|không\\s+thể|không\\s+hỗ\\s+trợ|cần\\s+đính\\s+chính|cần\\s+hướng\\s+dẫn|đề\\s+xuất|dự\\s+định|khuyến\\s+nghị|can\\s+thiệp)|' +
-    'để\\s+(?:tôi|fairy|giúp|giấu|xử\\s+lý|đổi|ưu\\s+tiên|đảm\\s+bảo|giữ|bỏ|chặn|kiểm\\s+tra)|' +
-    'chính\\s+xác|chắc\\s+chắn\\s+rồi|hệ\\s+thống\\s+(?:đã|hiện|sẽ)|luồng\\s+ipc|toàn\\s+bộ\\s+(?:dự\\s+án|cấu\\s+hình|luồng|đường\\s+ống)|với\\s+cấu\\s+hình|' +
-    'bạn\\s+hoàn\\s+toàn\\s+có\\s+thể|bạn\\s+có\\s+thể\\s+sử\\s+dụng\\s+các\\s+công\\s+cụ|' +
-    'việc\\s+(?:tra\\s+cứu|tắt\\s+tiếng)|không\\s+(?:thể\\s+can\\s+thiệp|phải\\s+lọc)|antigravity\\s+vẫn\\s+phát|dùng\\s+giọng\\s+antigravity' +
+    'ngài|master|ting~|khẳng\\s+định|đề\\s+xuất|kiến\\s+nghị|cảnh\\s+báo|ghi\\s+nhận|đính\\s+chính|tỷ\\s+lệ\\s+thành\\s+công|' +
+    'tôi\\s+(?:sẽ|đang|đã|hiểu|rất\\s+vui|ghi\\s+nhận|tìm\\s+thấy|không\\s+thể|không\\s+hỗ\\s+trợ|cần|đề\\s+xuất|dự\\s+định|khuyến\\s+nghị|can\\s+thiệp|cũng|chưa|chỉ\\s+xóa|giữ|hạ|giữ\\s+nguyên|vừa)|' +
+    'để\\s+(?:tôi|fairy|giúp|giấu|xử\\s+lý|đổi|ưu\\s+tiên|đảm\\s+bảo|giữ|bỏ|chặn|kiểm\\s+tra|giải\\s+quyết|ghi\\s+đè|bảo\\s+vệ|thực\\s+hiện)|' +
+    'chính\\s+xác|chắc\\s+chắn\\s+rồi|đúng\\s+vậy|hoàn\\s+tất|hiện\\s+trạng|kết\\s+luận|tóm\\s+tắt|' +
+    'hệ\\s+thống\\s+(?:đã|hiện|sẽ|này|h\\.?d\\.?d)|luồng\\s+ipc|đường\\s+ống|việc\\s+(?:giữ|tạo|đổi|tra\\s+cứu|tắt\\s+tiếng|chuyển)|' +
+    'toàn\\s+bộ\\s+(?:dự\\s+án|cấu\\s+hình|luồng|đường\\s+ống|mã\\s+nguồn|commit|nội\\s+dung|tệp)|' +
+    'mọi\\s+(?:thứ|tính\\s+năng|chỉ\\s+số|thay\\s+đổi|dữ\\s+liệu)|' +
+    'kho\\s+(?:cũ|mới|lưu\\s+trữ)|bản\\s+(?:dự\\s+phòng|fork|public)|phương\\s+án\\s+(?:một|hai)|thứ\\s+(?:nhất|hai|ba)|' +
+    'smoke\\s+test|trên\\s+card|cơ\\s+chế|với\\s+cấu\\s+hình|bạn\\s+hoàn\\s+toàn\\s+có\\s+thể|không\\s+(?:thể\\s+can\\s+thiệp|phải\\s+lọc)|' +
+    "i'll|i\\s+will|let\\s+me|checking" +
   ')' + B_R,
   'i'
 );
@@ -643,11 +649,21 @@ function mergeLatestCompleteTalker(talkerListsNewestFirst) {
   }
   if (!mergedItems.length) return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
 
-  // Luôn lấy lượt talker mới nhất, tuyệt đối không lùi về lượt cũ khi câu mới bị cắt ngang.
+  // Ghép tối đa 2 lượt gần nhất nếu lượt kế cuối vừa hoàn chỉnh ngay trước lượt dở dang mới.
+  if (mergedItems.length >= 2 && !mergedItems[mergedItems.length - 1].complete && mergedItems[mergedItems.length - 2].complete) {
+    const prev = mergedItems[mergedItems.length - 2];
+    const last = mergedItems[mergedItems.length - 1];
+    const combined = `${prev.text} ${last.text}`.trim();
+    return {
+      liveTalkerTime: last.ts || prev.ts,
+      liveTalkerText: combined.slice(0, 680),
+      liveTalkerComplete: false,
+    };
+  }
   const chosen = mergedItems[mergedItems.length - 1];
   return {
     liveTalkerTime: chosen.ts,
-    liveTalkerText: chosen.text.slice(0, 340),
+    liveTalkerText: chosen.text.slice(0, 680),
     liveTalkerComplete: Boolean(chosen.complete),
   };
 }
@@ -788,10 +804,10 @@ function parseVoiceChatFile(filePath, now = Date.now(), maxStaleMs = Infinity) {
 
     const startedAtMs = lastChat.startedAt ? Date.parse(lastChat.startedAt) || 0 : 0;
     const stoppedAtMs = lastChat.stoppedAt ? Date.parse(lastChat.stoppedAt) || 0 : 0;
-    const lastVoiceText = String(lastVoiceLine?.text || '').replace(/\s+/g, ' ').trim().slice(0, 260);
+    const lastVoiceText = String(lastVoiceLine?.text || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
     const ownerStartMs = ownerChat?.startedAt ? Date.parse(ownerChat.startedAt) || 0 : 0;
     const lastVoiceTime = (lastVoiceLine?.time ? Date.parse(lastVoiceLine.time) : 0) || ownerStartMs || startedAtMs || st.mtimeMs;
-    const voiceSessionEnded = Boolean(stoppedAtMs > 0 && stoppedAtMs >= lastVoiceTime);
+    const voiceSessionEnded = Boolean(stoppedAtMs > 0 && stoppedAtMs >= lastVoiceTime && now - stoppedAtMs > 4500);
     const isRunning = Boolean(startedAtMs > 0 && !stoppedAtMs && now - Math.max(startedAtMs, lastVoiceTime, st.mtimeMs) < 120000);
     const isRecentLine = Boolean(lastVoiceText) && lastVoiceTime > 0 && now - lastVoiceTime < 25000 && !voiceSessionEnded;
 
@@ -1286,7 +1302,7 @@ function buildSpeechSummaryFromModel(raw) {
   return cleanTextForSpeech(txt);
 }
 
-function cleanTextForSpeech(raw) {
+function stripSpeechMarkdown(raw) {
   let s = String(raw || '');
   s = s.replace(/```[\s\S]*?```/g, ' ');
   s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
@@ -1304,16 +1320,47 @@ function cleanTextForSpeech(raw) {
   s = s.replace(/[*#_~>|`]/g, ' ');
   s = s.replace(/\.{2,}/g, '.');
   s = s.replace(/\s*\.\s*/g, '. ');
-  s = s.replace(/\s+/g, ' ').trim();
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function cleanTextForSpeech(raw, maxLen = 360) {
+  const s = stripSpeechMarkdown(raw);
   if (!s) return '';
-  const parts = s.split(/(?<=[.!?])\s+/).filter((p) => p.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 3);
+  const parts = s.split(/(?<=[.!?…])\s+/).filter((p) => p.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 3);
   let picked = '';
+  const softFloor = Math.max(120, Math.round(maxLen * 0.78));
   for (const p of parts) {
-    if (picked && picked.length + p.length + 1 > 320) break;
+    if (picked && picked.length + p.length + 1 > maxLen) break;
     picked = picked ? `${picked} ${p}` : p;
-    if (picked.length >= 250) break;
+    if (picked.length >= softFloor) break;
   }
-  return (picked || s.slice(0, 320)).trim();
+  return (picked || s.slice(0, maxLen)).trim();
+}
+
+function extractUnspokenSpeech(rawText, maxLen = 680) {
+  const s = stripSpeechMarkdown(rawText);
+  if (!s) return { text: '', sentences: [] };
+  const parts = s.split(/(?<=[.!?…])\s+/).filter((p) => p.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 4);
+  if (!parts.length) {
+    if (s.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length < 4) return { text: '', sentences: [] };
+    if (isKnownUserSpeech(s) || isAlreadySpokenNorm(normalizeSpeechKey(s))) return { text: '', sentences: [] };
+    return { text: s.slice(0, maxLen).trim(), sentences: [s.slice(0, maxLen).trim()] };
+  }
+  const kept = [];
+  const seenLocal = new Set();
+  let acc = '';
+  for (const part of parts) {
+    const cleanPart = part.trim();
+    const norm = normalizeSpeechKey(cleanPart);
+    if (!norm || norm.length < 4) continue;
+    if (seenLocal.has(norm)) continue;
+    if (isKnownUserSpeech(cleanPart) || isAlreadySpokenNorm(norm)) continue;
+    if (acc && acc.length + cleanPart.length + 1 > maxLen) break;
+    seenLocal.add(norm);
+    kept.push(cleanPart);
+    acc = acc ? `${acc} ${cleanPart}` : cleanPart;
+  }
+  return { text: acc.trim(), sentences: kept };
 }
 
 function pushStateToRenderer() {
@@ -1322,7 +1369,7 @@ function pushStateToRenderer() {
   const b = snap.butler || {};
   const tu = b.tokenUsage || {};
   const bSig = `${tu.todayUncached || 0}|${tu.budgetPct || 0}|${b.preferences?.assistantMode || ''}|${b.preferences?.clipboardWatch ? 1 : 0}|${b.preferences?.dailyTokenBudget || 0}|${b.pinnedNotes?.length || 0}|${b.pomodoro?.remainingSec || 0}|${b.activeApp?.appName || ''}|${b.activeApp?.aiBrand || ''}`;
-  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.lastReplySpeech}|${snap.liveTalkerText}|${snap.liveTalkerTime}|${snap.voiceActive}|${snap.voiceSessionEnded}|${snap.lastVoiceText}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}|${bSig}`;
+  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.lastReplySpeech}|${snap.liveTalkerText}|${snap.liveTalkerTime}|${snap.voiceActive}|${snap.voiceSessionEnded}|${snap.lastVoiceText}|${snap.lastVoiceTime}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}|${bSig}`;
   if (key === lastStateKey) return;
   lastStateKey = key;
   mainWin.webContents.send('fairy:state', snap);
@@ -2021,10 +2068,11 @@ let ttsReqSeq = 0;
 const ttsPending = new Map();
 let ttsEnabled = true;
 let ttsBusy = false;
-let ttsQueuedText = '';
+const ttsSpeechQueue = [];
 let ttsBaselineReady = false;
 const spokenStateByConv = new Map();
 let voiceDebounceTimer = null;
+let vcDebounceTimer = null;
 let stopDebounceTimer = null;
 
 const spokenVoiceKeys = new Set();
@@ -2093,6 +2141,7 @@ function getConvSpokenState(convId) {
   if (!spokenStateByConv.has(key)) {
     spokenStateByConv.set(key, {
       lastVoiceKey: '',
+      lastVcKey: '',
       lastStopKey: '',
       lastText: '',
       incompletePrefix: '',
@@ -2187,7 +2236,7 @@ function startTtsWorker() {
 
 function runTtsSynthesis(text, onChunk = null, timeoutMs = 60000) {
   return new Promise((resolve) => {
-    const cleaned = cleanTextForSpeech(text);
+    const cleaned = cleanTextForSpeech(text, 680);
     if (!cleaned || IS_SMOKE_TEST) {
       resolve({ ok: false, error: 'empty_or_smoke' });
       return;
@@ -2198,7 +2247,7 @@ function runTtsSynthesis(text, onChunk = null, timeoutMs = 60000) {
       return;
     }
     const id = ++ttsReqSeq;
-    const fileName = `live-${id % 4}.wav`;
+    const fileName = `live-${id % 16}.wav`;
     const outPath = join(PLUGIN_ROOT, 'assets', 'voice', fileName);
     let sawChunk = false;
     const timer = setTimeout(() => {
@@ -2230,10 +2279,14 @@ function runTtsSynthesis(text, onChunk = null, timeoutMs = 60000) {
 }
 
 async function enqueueFairySpeech(text) {
-  const cleaned = cleanTextForSpeech(text);
+  const cleaned = cleanTextForSpeech(text, 680);
   if (!cleaned || !ttsEnabled || IS_SMOKE_TEST) return { ok: false, skipped: true };
   if (ttsBusy) {
-    ttsQueuedText = cleaned;
+    const tail = ttsSpeechQueue[ttsSpeechQueue.length - 1] || '';
+    if (tail !== cleaned) {
+      ttsSpeechQueue.push(cleaned);
+      if (ttsSpeechQueue.length > 6) ttsSpeechQueue.shift();
+    }
     return { ok: true, queued: true };
   }
   ttsBusy = true;
@@ -2241,7 +2294,6 @@ async function enqueueFairySpeech(text) {
   let lastRes = { ok: false };
   try {
     while (current) {
-      ttsQueuedText = '';
       const activeText = current;
       lastRes = await runTtsSynthesis(activeText, (chunkPayload) => {
         if (mainWin && !mainWin.isDestroyed() && ttsEnabled) {
@@ -2257,46 +2309,79 @@ async function enqueueFairySpeech(text) {
           totalChunks: 1,
         });
       }
-      current = ttsEnabled ? ttsQueuedText : '';
+      current = ttsEnabled && ttsSpeechQueue.length > 0 ? ttsSpeechQueue.shift() : '';
     }
   } finally {
     ttsBusy = false;
+    if (!ttsEnabled) ttsSpeechQueue.length = 0;
   }
   return lastRes;
 }
 
 function getVoiceCandidate(snap) {
-  if (!snap) return { key: '', text: '', rawText: '', complete: true };
-  if (snap.liveTalkerText) {
-    const text = cleanTextForSpeech(snap.liveTalkerText);
-    if (!text) return { key: '', text: '', rawText: '', complete: true };
-    return {
-      key: `live:${snap.conversationId}:${snap.liveTalkerTime}:${text.slice(0, 80)}`,
-      text,
-      rawText: snap.liveTalkerText,
-      complete: Boolean(snap.liveTalkerComplete),
-    };
-  }
-  if (snap.voiceSessionEnded || !snap.lastVoiceText) return { key: '', text: '', rawText: '', complete: true };
-  const text = cleanTextForSpeech(snap.lastVoiceText);
+  if (!snap || !snap.liveTalkerText) return { key: '', text: '', rawText: '', complete: true };
+  const text = cleanTextForSpeech(snap.liveTalkerText, 680);
   if (!text) return { key: '', text: '', rawText: '', complete: true };
+  return {
+    key: `live:${snap.conversationId}:${snap.liveTalkerTime}:${text.slice(0, 80)}`,
+    text,
+    rawText: snap.liveTalkerText,
+    complete: Boolean(snap.liveTalkerComplete),
+  };
+}
+
+function getVcCandidate(snap) {
+  if (!snap || snap.voiceSessionEnded || !snap.lastVoiceText) {
+    return { key: '', text: '', rawText: '' };
+  }
+  const text = cleanTextForSpeech(snap.lastVoiceText, 680);
+  if (!text) return { key: '', text: '', rawText: '' };
   const stamp = snap.lastVoiceTime || snap.updatedAt || '';
-  return { key: `vc:${snap.conversationId}:${stamp}:${text.slice(0, 80)}`, text, rawText: snap.lastVoiceText, complete: true };
+  return {
+    key: `vc:${snap.conversationId}:${stamp}:${text.slice(0, 80)}`,
+    text,
+    rawText: snap.lastVoiceText,
+  };
 }
 
 function getStopCandidate(snap) {
   if (!snap || (snap.lastEvent !== 'Stop' && snap.mood !== 'done')) return { key: '', text: '' };
   const quip = String(snap.dialogueQuip || '').trim();
-  const safeQuip = quip.startsWith('🎙️') ? '' : cleanTextForSpeech(quip);
+  const safeQuip = quip.startsWith('🎙️') ? '' : cleanTextForSpeech(quip, 360);
   const text = snap.lastReplySpeech || safeQuip;
   if (!text) return { key: '', text: '' };
   const stamp = snap.doneAt || snap.updatedAt || '';
   return { key: `${snap.conversationId}:${stamp}:${text.slice(0, 60)}`, text };
 }
 
+function dispatchVoiceCandidate(cand, st) {
+  if (!ttsEnabled || !cand || !cand.key || spokenVoiceKeys.has(cand.key)) return;
+  markSpokenVoiceKey(cand.key);
+
+  let rawSource = cand.rawText || cand.text;
+  if (st.incompletePrefix && cand.rawText && cand.rawText.startsWith(st.incompletePrefix)) {
+    const suffix = cand.rawText.slice(st.incompletePrefix.length).trim();
+    if (suffix) rawSource = suffix;
+  }
+  if (typeof cand.complete === 'boolean') {
+    st.incompletePrefix = cand.complete ? '' : (cand.rawText || '');
+  }
+
+  if (isKnownUserSpeech(rawSource) || isKnownUserSpeech(cand.rawText)) return;
+  const { text: unspoken, sentences } = extractUnspokenSpeech(rawSource, 680);
+  if (!unspoken || unspoken.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length < 4) return;
+  if (unspoken === st.lastText) return;
+
+  st.lastText = unspoken;
+  for (const s of sentences) markSpokenVoiceNorm(s);
+  markSpokenVoiceNorm(unspoken);
+  enqueueFairySpeech(unspoken).catch(() => {});
+}
+
 function scheduleSpeechFromSnapshot(snap) {
   if (!snap || !snap.conversationId) return;
   const voiceInit = getVoiceCandidate(snap);
+  const vcInit = getVcCandidate(snap);
   const stopInit = getStopCandidate(snap);
   const convState = getConvSpokenState(snap.conversationId);
 
@@ -2304,10 +2389,14 @@ function scheduleSpeechFromSnapshot(snap) {
     ttsBaselineReady = true;
     convState.lastVoiceKey = voiceInit.key;
     markSpokenVoiceKey(voiceInit.key);
+    convState.lastVcKey = vcInit.key;
+    markSpokenVoiceKey(vcInit.key);
     convState.lastStopKey = stopInit.key;
-    convState.lastText = voiceInit.text || stopInit.text || '';
+    convState.lastText = voiceInit.text || vcInit.text || stopInit.text || '';
     markSpokenVoiceNorm(voiceInit.text);
     markSpokenVoiceNorm(voiceInit.rawText);
+    markSpokenVoiceNorm(vcInit.text);
+    markSpokenVoiceNorm(vcInit.rawText);
     markSpokenVoiceNorm(snap.liveTalkerText);
     markSpokenVoiceNorm(snap.lastVoiceText);
     markSpokenVoiceNorm(stopInit.text);
@@ -2315,45 +2404,35 @@ function scheduleSpeechFromSnapshot(snap) {
   }
   if (!ttsEnabled || IS_SMOKE_TEST) return;
 
+  // Luồng 1: Phụ đề trực tiếp (UIA / Hook)
   if (voiceInit.key && voiceInit.key !== convState.lastVoiceKey && !spokenVoiceKeys.has(voiceInit.key)) {
-    clearTimeout(voiceDebounceTimer);
-    const delayMs = voiceInit.complete ? 15 : 650;
-    voiceDebounceTimer = setTimeout(() => {
-      const latest = readSnapshot();
-      const cand = getVoiceCandidate(latest);
-      const st = getConvSpokenState(latest?.conversationId);
-      if (!ttsEnabled || !cand.key || cand.key === st.lastVoiceKey || spokenVoiceKeys.has(cand.key)) return;
-      st.lastVoiceKey = cand.key;
-      markSpokenVoiceKey(cand.key);
-
-      let toSpeak = cand.text;
-      if (st.incompletePrefix && cand.rawText && cand.rawText.startsWith(st.incompletePrefix)) {
-        const suffix = cleanTextForSpeech(cand.rawText.slice(st.incompletePrefix.length));
-        toSpeak = suffix;
-      }
-      st.incompletePrefix = cand.complete ? '' : cand.rawText;
-
-      if (isKnownUserSpeech(toSpeak) || isKnownUserSpeech(cand.rawText)) {
-        return;
-      }
-
-      const norm = normalizeSpeechKey(toSpeak);
-      const rawNorm = normalizeSpeechKey(cand.rawText);
-      const alreadySpoken = Boolean(isAlreadySpokenNorm(norm) || (toSpeak === cand.text && isAlreadySpokenNorm(rawNorm)));
-      if (
-        toSpeak &&
-        toSpeak.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 4 &&
-        toSpeak !== st.lastText &&
-        !alreadySpoken
-      ) {
-        st.lastText = toSpeak;
-        markSpokenVoiceNorm(toSpeak);
-        markSpokenVoiceNorm(cand.rawText);
-        enqueueFairySpeech(toSpeak).catch(() => {});
-      }
-    }, delayMs);
+    convState.lastVoiceKey = voiceInit.key;
+    if (voiceInit.complete) {
+      clearTimeout(voiceDebounceTimer);
+      voiceDebounceTimer = null;
+      dispatchVoiceCandidate(voiceInit, convState);
+    } else {
+      clearTimeout(voiceDebounceTimer);
+      const capturedVoice = { ...voiceInit };
+      voiceDebounceTimer = setTimeout(() => {
+        voiceDebounceTimer = null;
+        dispatchVoiceCandidate(capturedVoice, convState);
+      }, 320);
+    }
   }
 
+  // Luồng 2: Đối chiếu voice_chats/*.json (ROLE_VOICE xác thực 100% AI, phát bù mọi câu UIA lỡ bỏ sót)
+  if (vcInit.key && vcInit.key !== convState.lastVcKey && !spokenVoiceKeys.has(vcInit.key)) {
+    convState.lastVcKey = vcInit.key;
+    clearTimeout(vcDebounceTimer);
+    const capturedVc = { ...vcInit };
+    vcDebounceTimer = setTimeout(() => {
+      vcDebounceTimer = null;
+      dispatchVoiceCandidate(capturedVc, convState);
+    }, 160);
+  }
+
+  // Luồng 3: Tóm tắt câu mở đầu khi lượt agent kết thúc (Stop)
   if (stopInit.key && stopInit.key !== convState.lastStopKey) {
     const ageMs = Date.now() - Math.max(Number(snap.doneAt) || 0, Number(snap.updatedAt) || 0);
     if (ageMs > 25000 && !convState.lastStopKey) {
@@ -2368,9 +2447,12 @@ function scheduleSpeechFromSnapshot(snap) {
       if (!ttsEnabled || !cand.key || cand.key === st.lastStopKey) return;
       st.lastStopKey = cand.key;
       st.incompletePrefix = '';
-      if (cand.text && cand.text !== st.lastText) {
-        st.lastText = cand.text;
-        enqueueFairySpeech(cand.text).catch(() => {});
+      const { text: unspoken, sentences } = extractUnspokenSpeech(cand.text, 360);
+      if (unspoken && unspoken !== st.lastText) {
+        st.lastText = unspoken;
+        for (const s of sentences) markSpokenVoiceNorm(s);
+        markSpokenVoiceNorm(unspoken);
+        enqueueFairySpeech(unspoken).catch(() => {});
       }
     }, 30);
   }
@@ -2443,7 +2525,7 @@ async function pollLiveVoiceSubtitle() {
     return;
   }
   if (IS_WIN && (!voiceWorkerReady || voicePending.size > 0)) {
-    scheduleNextUiaPoll(voicePending.size > 0 ? 500 : 800);
+    scheduleNextUiaPoll(voicePending.size > 0 ? 80 : 800);
     return;
   }
 
@@ -3102,6 +3184,7 @@ app.on('will-quit', (e) => {
   clearInterval(pomodoroTimer);
   clearTimeout(uiaPollTimer);
   clearTimeout(voiceDebounceTimer);
+  clearTimeout(vcDebounceTimer);
   clearTimeout(stopDebounceTimer);
   if (!IS_SMOKE_TEST && existsSync(DESKTOP_ENDPOINT_FILE)) {
     try {

@@ -849,7 +849,7 @@ function startTelemetryWatcher() {
   let debounce = null;
   const schedulePush = () => {
     clearTimeout(debounce);
-    debounce = setTimeout(pushStateToRenderer, 80);
+    debounce = setTimeout(pushStateToRenderer, 15);
   };
   const tryWatch = () => {
     if (!stateWatcher && existsSync(dir)) {
@@ -908,7 +908,7 @@ function startTelemetryWatcher() {
   pollTimer = setInterval(() => {
     tryWatch();
     pushStateToRenderer();
-  }, 500);
+  }, 200);
 }
 
 function getStartupEnabled() {
@@ -1724,7 +1724,7 @@ function scheduleSpeechFromSnapshot(snap) {
         st.lastText = toSpeak;
         enqueueFairySpeech(toSpeak).catch(() => {});
       }
-    }, 60);
+    }, 15);
   }
 
   if (stopInit.key && stopInit.key !== convState.lastStopKey) {
@@ -1745,7 +1745,7 @@ function scheduleSpeechFromSnapshot(snap) {
         st.lastText = cand.text;
         enqueueFairySpeech(cand.text).catch(() => {});
       }
-    }, 120);
+    }, 30);
   }
 }
 

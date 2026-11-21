@@ -253,6 +253,35 @@ def build_warm_vocoder(yq: np.ndarray, f0_targ: np.ndarray, voiced: np.ndarray, 
     return (y_voc_bp * (rms_q / max(1e-9, rms_v))).astype(np.float32)
 
 
+def _ram_detune_ola(y: np.ndarray, ratio: float, delay_ms: float, sr: int = SR) -> np.ndarray:
+    """Fast vectorized Hann-window OLA micro-pitch shift (+delay) in RAM (< 2 ms)."""
+    n = len(y)
+    if n < 1024:
+        return y.copy()
+    hop = 256
+    glen = 1024
+    gwin = np.hanning(glen)
+    n_pos = (n - glen) // hop + 1
+    starts = np.arange(n_pos, dtype=np.float64) * hop
+    t_mod = (starts * (ratio - 1.0)) % (hop * 2.0)
+    t_src = np.clip(starts[:, None] - t_mod[:, None] + np.arange(glen)[None, :] * ratio, 0.0, n - 1.0)
+    idx0 = t_src.astype(np.int32)
+    frac = t_src - idx0
+    idx1 = np.minimum(idx0 + 1, n - 1)
+    grains = (y[idx0] * (1.0 - frac) + y[idx1] * frac) * gwin[None, :]
+    out = np.zeros(n, dtype=np.float64)
+    norm = np.zeros(n, dtype=np.float64)
+    idx_out = starts.astype(np.int32)[:, None] + np.arange(glen)[None, :]
+    np.add.at(out, idx_out, grains)
+    np.add.at(norm, idx_out, gwin[None, :])
+    shifted = (out / np.maximum(norm, 1e-6)).astype(np.float32)
+    dsamp = max(1, int(round((delay_ms / 1000.0) * sr)))
+    delayed = np.zeros_like(shifted)
+    if dsamp < n:
+        delayed[dsamp:] = shifted[:-dsamp]
+    return delayed
+
+
 def render_independent_formant_android(
     y_src: np.ndarray,
     out_path: str,
@@ -265,7 +294,7 @@ def render_independent_formant_android(
     detune_cents: float,
     sr: int = SR,
 ):
-    """Apply pitch quantizer + warm vocoder + staccato tail gate + independent formant shift + comb/unison."""
+    """Apply pitch quantizer + warm vocoder + staccato tail gate + independent formant shift + RAM comb/unison."""
     yq, f0_targ, voiced, hop = quantize_semitone_fast(y_src, snap_alpha=snap_alpha, sr=sr)
     y_voc = build_warm_vocoder(yq, f0_targ, voiced, hop, sr=sr)
     y_core = ((1.0 - voc_mix) * yq + voc_mix * y_voc).astype(np.float32)
@@ -276,18 +305,13 @@ def render_independent_formant_android(
     u_each = round(unison_total_weight / 2.0, 3)
     comb_samples = int(round(0.0035 * sr))
 
-    # Two-stage rubberband decouples vocal-tract formant (+6%) from pitch (0.925 -> ~227 Hz)
+    # Single-stream rubberband decouples vocal-tract formant (+6.5%) + main EQ; comb/unison run in RAM
     fc = (
         f"[0:a]rubberband=pitch={formant_shift}:formant=shifted,"
-        f"rubberband=pitch={pitch_comp}:formant=preserved[pitched];"
-        "[pitched]asplit=4[d0][c0][h1][h2];"
-        "[d0]highpass=f=100,equalizer=f=230:t=q:w=1.2:g=1.4,"
+        f"rubberband=pitch={pitch_comp}:formant=preserved,"
+        "highpass=f=100,equalizer=f=230:t=q:w=1.2:g=1.4,"
         "equalizer=f=3300:t=q:w=1.3:g=-1.8,"
-        "acompressor=threshold=-19dB:ratio=2.8:attack=5:release=70[dry];"
-        f"[c0]highpass=f=300,lowpass=f=3500,adelay={comb_samples}S[comb];"
-        f"[h1]rubberband=pitch={round(factor, 4)}:formant=preserved,highpass=f=240,lowpass=f=3800,adelay=8[u1];"
-        f"[h2]rubberband=pitch={round(1.0 / factor, 4)}:formant=preserved,highpass=f=240,lowpass=f=3800,adelay=13[u2];"
-        f"[dry][comb][u1][u2]amix=inputs=4:duration=longest:weights='0.82 {comb_weight} {u_each} {u_each}':normalize=0[out]"
+        "acompressor=threshold=-19dB:ratio=2.8:attack=5:release=70[out]"
     )
 
     proc = subprocess.run(
@@ -300,7 +324,18 @@ def render_independent_formant_android(
         capture_output=True,
         check=True,
     )
-    y_out = np.frombuffer(proc.stdout, dtype=np.float32).copy()
+    y_main = np.frombuffer(proc.stdout, dtype=np.float32).copy()
+    if len(y_main) > comb_samples:
+        y_comb_bp = zero_phase_bandpass(y_main, 300.0, 3500.0, sr=sr)
+        y_comb = np.zeros_like(y_main)
+        y_comb[comb_samples:] = y_comb_bp[:-comb_samples]
+        y_uni_band = zero_phase_bandpass(y_main, 240.0, 3800.0, sr=sr)
+        y_u1 = _ram_detune_ola(y_uni_band, factor, 8.0, sr=sr)
+        y_u2 = _ram_detune_ola(y_uni_band, 1.0 / factor, 13.0, sr=sr)
+        y_out = (0.82 * y_main + comb_weight * y_comb + u_each * (y_u1 + y_u2)).astype(np.float32)
+    else:
+        y_out = y_main
+
     rms_out = float(np.sqrt(np.mean(y_out ** 2) + 1e-12)) if len(y_out) else 0.0
     if rms_out > 1e-5:
         y_out *= 0.145 / rms_out

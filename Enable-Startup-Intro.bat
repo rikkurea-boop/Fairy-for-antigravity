@@ -1,5 +1,10 @@
 @echo off
-reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "FairyIII_HDD_Intro" /t REG_SZ /d "\"%~dp0desktop-app\node_modules\electron\dist\electron.exe\" \"%~dp0desktop-app\"" /f >nul
+set "TAURI_EXE=%~dp0desktop-app-tauri\src-tauri\target\release\fairy-desktop.exe"
+if exist "%TAURI_EXE%" (
+  reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "FairyIII_HDD_Intro" /t REG_SZ /d "\"%TAURI_EXE%\"" /f >nul
+) else (
+  reg.exe add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "FairyIII_HDD_Intro" /t REG_SZ /d "\"%~dp0desktop-app\node_modules\electron\dist\electron.exe\" \"%~dp0desktop-app\"" /f >nul
+)
 if exist "%~dp0scripts\setup-desktop-and-startup.ps1" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Enable-ScheduledTask -TaskName 'FairyIII_HDD_BootIntro' -ErrorAction SilentlyContinue | Out-Null } catch {}"
 )

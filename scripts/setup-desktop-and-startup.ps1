@@ -4,11 +4,16 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $DesktopAppDir = Join-Path $RepoRoot 'desktop-app'
 $ElectronExe = Join-Path $DesktopAppDir 'node_modules\electron\dist\electron.exe'
+$TauriExe = Join-Path $RepoRoot 'desktop-app-tauri\src-tauri\target\release\fairy-desktop.exe'
+$UseTauri = Test-Path $TauriExe
+$LaunchTarget = if ($UseTauri) { $TauriExe } else { $ElectronExe }
+$LaunchArgs = if ($UseTauri) { '' } else { "`"$DesktopAppDir`"" }
+$LaunchWorkDir = if ($UseTauri) { $RepoRoot } else { $DesktopAppDir }
 $SourcePng = Join-Path $RepoRoot 'antigravity-plugin\assets\icon-180.png'
 $IcoPath = Join-Path $DesktopAppDir 'fairy.ico'
 
-if (-not (Test-Path $ElectronExe)) {
-  throw "Missing electron.exe at $ElectronExe"
+if (-not (Test-Path $LaunchTarget)) {
+  throw "Missing desktop executable at $LaunchTarget"
 }
 if (-not (Test-Path $SourcePng)) {
   throw "Missing source PNG icon at $SourcePng"
@@ -81,12 +86,22 @@ try {
   $fs.Dispose()
 }
 
-# 2. Create Silent VBS launcher (zero CMD window flash, SW_SHOWNORMAL = 1 for Electron GUI)
+# 2. Create Silent VBS launcher (zero CMD window flash, prefers Tauri fast-boot binary when built)
 $VbsPath = Join-Path $RepoRoot 'Launch-Fairy-Silent.vbs'
 $vbsContent = @(
+  'Set fso = CreateObject("Scripting.FileSystemObject")'
+  'rootDir = fso.GetParentFolderName(WScript.ScriptFullName)'
+  'tauriExe = fso.BuildPath(rootDir, "desktop-app-tauri\src-tauri\target\release\fairy-desktop.exe")'
+  'appDir = fso.BuildPath(rootDir, "desktop-app")'
+  'electronExe = fso.BuildPath(appDir, "node_modules\electron\dist\electron.exe")'
   'Set WshShell = CreateObject("WScript.Shell")'
-  "WshShell.CurrentDirectory = `"$DesktopAppDir`""
-  "WshShell.Run `"`"`"$ElectronExe`"`" `"`"$DesktopAppDir`"`"`", 1, False"
+  'If fso.FileExists(tauriExe) Then'
+  '  WshShell.CurrentDirectory = rootDir'
+  '  WshShell.Run """" & tauriExe & """", 1, False'
+  'Else'
+  '  WshShell.CurrentDirectory = appDir'
+  '  WshShell.Run """" & electronExe & """ """ & appDir & """", 1, False'
+  'End If'
 ) -join "`r`n"
 [System.IO.File]::WriteAllText($VbsPath, $vbsContent + "`r`n", [System.Text.Encoding]::ASCII)
 
@@ -99,7 +114,12 @@ $TaskName = 'FairyIII_HDD_BootIntro'
 
 $enableBat = @"
 @echo off
-reg.exe add "$RunKey" /v "$RunValueName" /t REG_SZ /d "\"$ElectronExe\" \"$DesktopAppDir\"" /f >nul
+set "TAURI_EXE=%~dp0desktop-app-tauri\src-tauri\target\release\fairy-desktop.exe"
+if exist "%TAURI_EXE%" (
+  reg.exe add "$RunKey" /v "$RunValueName" /t REG_SZ /d "\"%TAURI_EXE%\"" /f >nul
+) else (
+  reg.exe add "$RunKey" /v "$RunValueName" /t REG_SZ /d "\"$ElectronExe\" \"$DesktopAppDir\"" /f >nul
+)
 if exist "%~dp0scripts\setup-desktop-and-startup.ps1" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Enable-ScheduledTask -TaskName '$TaskName' -ErrorAction SilentlyContinue | Out-Null } catch {}"
 )
@@ -129,7 +149,6 @@ $ShortcutTargets = @(
 
 $descDot = [char]0x00B7
 $appDesc = "Fairy III $descDot H.D.D Terminal Overlay (Antigravity)"
-$quotedArg = "`"$DesktopAppDir`""
 
 foreach ($lnkPath in $ShortcutTargets) {
   $parentDir = Split-Path -Parent $lnkPath
@@ -137,9 +156,9 @@ foreach ($lnkPath in $ShortcutTargets) {
     New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
   }
   $sc = $WshShell.CreateShortcut($lnkPath)
-  $sc.TargetPath = $ElectronExe
-  $sc.Arguments = $quotedArg
-  $sc.WorkingDirectory = $DesktopAppDir
+  $sc.TargetPath = $LaunchTarget
+  $sc.Arguments = $LaunchArgs
+  $sc.WorkingDirectory = $LaunchWorkDir
   $sc.IconLocation = "$IcoPath,0"
   $sc.WindowStyle = 1
   $sc.Description = $appDesc
@@ -151,13 +170,17 @@ $PsRunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 if (-not (Test-Path $PsRunKey)) {
   New-Item -Path $PsRunKey -Force | Out-Null
 }
-$regCmd = "`"$ElectronExe`" `"$DesktopAppDir`""
+$regCmd = if ($UseTauri) { "`"$LaunchTarget`"" } else { "`"$LaunchTarget`" $LaunchArgs" }
 Set-ItemProperty -Path $PsRunKey -Name $RunValueName -Value $regCmd -Type String
 
 $taskStatus = 'skipped'
 try {
   $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-  $action = New-ScheduledTaskAction -Execute $ElectronExe -Argument $quotedArg -WorkingDirectory $DesktopAppDir
+  $action = if ($LaunchArgs) {
+    New-ScheduledTaskAction -Execute $LaunchTarget -Argument $LaunchArgs -WorkingDirectory $LaunchWorkDir
+  } else {
+    New-ScheduledTaskAction -Execute $LaunchTarget -WorkingDirectory $LaunchWorkDir
+  }
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
   $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet `

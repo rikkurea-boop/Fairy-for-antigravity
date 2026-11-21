@@ -1,0 +1,60 @@
+{"fn":"pickQuip","args":["idle",0]}
+{"fn":"pickQuip","args":["electricity75",1]}
+{"fn":"pickQuip","args":["electricity90",0]}
+{"fn":"pickQuip","args":["electricity100",0]}
+{"fn":"pickQuip","args":["spike",0]}
+{"fn":"pickQuip","args":["afk",0]}
+{"fn":"pickQuip","args":["night",0]}
+{"fn":"pickQuip","args":["aiWeb",0]}
+{"fn":"pickQuip","args":["unknown",3]}
+{"fn":"formatCompactTokens","args":[0]}
+{"fn":"formatCompactTokens","args":[850]}
+{"fn":"formatCompactTokens","args":[1500]}
+{"fn":"formatCompactTokens","args":[125400]}
+{"fn":"formatCompactTokens","args":[1500000]}
+{"fn":"formatCompactTokens","args":[25400000]}
+{"fn":"formatModelLabel","args":["gemini-hydrogen-high"]}
+{"fn":"formatModelLabel","args":["gemini-pro-orchestrator"]}
+{"fn":"formatModelLabel","args":["gemini-2.5-flash-lite"]}
+{"fn":"formatModelLabel","args":["gemini-2.5-flash"]}
+{"fn":"formatModelLabel","args":["claude-opus-4"]}
+{"fn":"formatModelLabel","args":["claude-sonnet-4"]}
+{"fn":"formatModelLabel","args":["claude-haiku-4"]}
+{"fn":"formatModelLabel","args":["custom_model-v1"]}
+{"fn":"formatModelLabel","args":[""]}
+{"fn":"normalizeWorkspacePath","args":["file:///C:/Users/Admin/my%20repo/"]}
+{"fn":"normalizeWorkspacePath","args":["C:/Users/Admin/project//"]}
+{"fn":"normalizeWorkspacePath","args":["   "]}
+{"fn":"classifyForegroundApp","args":["chrome.exe","ChatGPT - Google Chrome"]}
+{"fn":"classifyForegroundApp","args":["msedge.exe","Claude - New chat"]}
+{"fn":"classifyForegroundApp","args":["chrome.exe","Gemini - Google"]}
+{"fn":"classifyForegroundApp","args":["Antigravity.exe","Antigravity IDE"]}
+{"fn":"classifyForegroundApp","args":["Code.exe","main.rs - Visual Studio Code"]}
+{"fn":"classifyForegroundApp","args":["explorer.exe","Documents"]}
+{"fn":"classifyForegroundApp","args":["",""]}
+{"fn":"extractFirstUrl","args":["Mở trang https://github.com/rikkurea-boop nhanh"]}
+{"fn":"extractFirstUrl","args":["Không có đường dẫn"]}
+{"fn":"parseButlerCommand","args":[""]}
+{"fn":"parseButlerCommand","args":["antigravity: giải thích giúp tôi"]}
+{"fn":"parseButlerCommand","args":["/help"]}
+{"fn":"parseButlerCommand","args":["báo cáo đầu phiên"]}
+{"fn":"parseButlerCommand","args":["kiểm tra điện năng hôm nay"]}
+{"fn":"parseButlerCommand","args":["bật tự đọc clipboard"]}
+{"fn":"parseButlerCommand","args":["tắt tự đọc"]}
+{"fn":"parseButlerCommand","args":["tự đọc"]}
+{"fn":"parseButlerCommand","args":["đọc clipboard"]}
+{"fn":"parseButlerCommand","args":["git status"]}
+{"fn":"parseButlerCommand","args":["mở thư mục"]}
+{"fn":"parseButlerCommand","args":["dừng pomodoro"]}
+{"fn":"parseButlerCommand","args":["pomodoro 45 phút"]}
+{"fn":"parseButlerCommand","args":["xóa hết ghi chú"]}
+{"fn":"parseButlerCommand","args":["xem bộ nhớ"]}
+{"fn":"parseButlerCommand","args":["ghi nhớ: nhớ commit code trước khi ngủ"]}
+{"fn":"parseButlerCommand","args":["mở antigravity"]}
+{"fn":"parseButlerCommand","args":["khởi động lại"]}
+{"fn":"parseButlerCommand","args":["mở https://example.com/docs"]}
+{"fn":"parseButlerCommand","args":["mở chatgpt"]}
+{"fn":"parseButlerCommand","args":["mở github"]}
+{"fn":"parseButlerCommand","args":["tìm tài liệu Tauri v2 tiếng Việt"]}
+{"fn":"parseButlerCommand","args":["https://openai.com"]}
+{"fn":"parseButlerCommand","args":["câu bình thường không phải lệnh"]}

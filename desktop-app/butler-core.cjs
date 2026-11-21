@@ -22,6 +22,16 @@ const {
 const { basename, dirname, join } = require('node:path');
 const { fileURLToPath } = require('node:url');
 
+let rustButlerPure = null;
+try {
+  const rustEntry = join(__dirname, '..', 'rust', 'butler-pure-rs', 'index.cjs');
+  if (existsSync(rustEntry)) {
+    rustButlerPure = require(rustEntry);
+  }
+} catch {
+  rustButlerPure = null;
+}
+
 const CONV_ID_RE = /^[0-9a-f-]{8,}$/i;
 const DEFAULT_DAILY_BUDGET = 20_000_000;
 const VALID_BUDGETS = [5_000_000, 10_000_000, 20_000_000, 50_000_000, 100_000_000];
@@ -59,6 +69,9 @@ const FAIRY_QUIPS = {
 };
 
 function pickQuip(category, seed = Math.floor(Math.random() * 100)) {
+  if (rustButlerPure) {
+    try { return rustButlerPure.pickQuip(category, seed); } catch {}
+  }
   const list = FAIRY_QUIPS[category] || FAIRY_QUIPS.idle;
   return list[Math.abs(Number(seed) || 0) % list.length];
 }
@@ -72,6 +85,9 @@ function getLocalDateKey(ts = Date.now()) {
 }
 
 function formatCompactTokens(num) {
+  if (rustButlerPure) {
+    try { return rustButlerPure.formatCompactTokens(num); } catch {}
+  }
   const n = Math.max(0, Number(num) || 0);
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 1 : 2).replace(/\.0+$/, '')}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, '')}K`;
@@ -79,6 +95,9 @@ function formatCompactTokens(num) {
 }
 
 function formatModelLabel(rawModel) {
+  if (rustButlerPure) {
+    try { return rustButlerPure.formatModelLabel(rawModel); } catch {}
+  }
   const s = String(rawModel || '').trim().toLowerCase();
   if (!s) return 'Chưa rõ';
   if (s.includes('hydrogen-high') || s.includes('pro-high')) return 'Gemini Pro High';
@@ -92,6 +111,9 @@ function formatModelLabel(rawModel) {
 }
 
 function normalizeWorkspacePath(raw) {
+  if (rustButlerPure) {
+    try { return rustButlerPure.normalizeWorkspacePath(raw); } catch {}
+  }
   let s = String(raw || '').trim();
   if (!s) return '';
   if (/^file:\/\//i.test(s)) {
@@ -183,6 +205,9 @@ function normalizeMemoryShape(raw) {
 }
 
 function classifyForegroundApp(processName, windowTitle) {
+  if (rustButlerPure) {
+    try { return rustButlerPure.classifyForegroundApp(processName, windowTitle); } catch {}
+  }
   const proc = String(processName || '').trim();
   const title = String(windowTitle || '').trim();
   const hay = `${proc} ${title}`.toLowerCase();
@@ -214,11 +239,17 @@ function classifyForegroundApp(processName, windowTitle) {
 }
 
 function extractFirstUrl(text) {
+  if (rustButlerPure) {
+    try { return rustButlerPure.extractFirstUrl(text); } catch {}
+  }
   const m = String(text || '').match(/https?:\/\/[^\s"'<>]+/i);
   return m ? m[0] : '';
 }
 
 function parseButlerCommand(rawText) {
+  if (rustButlerPure) {
+    try { return rustButlerPure.parseButlerCommand(rawText); } catch {}
+  }
   const raw = String(rawText || '').trim();
   if (!raw) return { type: 'noop', raw };
 

@@ -1,0 +1,389 @@
+{"fn":"pickQuip","args":["x"],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[true],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[[],1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[0,3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":"b"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":["x",{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[{},10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[{},{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[["a",1],10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":"b"},2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[["a",1],0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":["x",1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[true,-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[null],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[0,42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[["a",1],{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[null,0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[["a",1],{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{},1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[true,{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[["a",1],0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[0,{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":"b"},1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[["a",1],1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[["a",1]],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[["a",1],42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":["x",-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":["x",10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[{},{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[["a",1],{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[true,{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[[],1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[null,{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":["x",{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[["a",1],9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[[]],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[null,-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[null,9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{},1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[["a",1],1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[["a",1],1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[[],{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[["a",1],{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[true,1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[0,{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[["a",1],3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[{},3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[{"a":"b"},0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[["a",1],-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":"b"},{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":"b"},{"$undefined":true}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[0,1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":["x",0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[0,1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[{},9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":"b"},2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[true,9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":["x",42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[true,100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[null,0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[{"a":"b"},-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[[],1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[null,2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{},2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[{"a":"b"},100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[["a",1],2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{},{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":["x",{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[null,1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":["x",2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[{},0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[[],{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":["x",{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[["a",1],2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[null,{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[true,10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[null,{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[true,0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[["a",1],{"$num":"-Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[[],2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[0,2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":"b"},42],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[["a",1],-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[null,1000000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,-1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"pickQuip","args":[0,{"$num":"-0"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},2],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[[],3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[null,{"$num":"Infinity"}],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[[],9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":"b"},{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{},{"$num":"NaN"}],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[["a",1],100],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":"b"},-2.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":[[],0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[{"a":{"b":"c"}},10],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[0,0.5],"ok":{"$undefined":true}}
+{"fn":"pickQuip","args":["x",9007199254740992],"ok":"Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — giao kèo công bằng chứ?"}
+{"fn":"pickQuip","args":[{"a":"b"},1000],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["x",0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":[null,2147483648],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"pickQuip","args":[true,1],"ok":"Hiệu năng của hệ thống này vẫn ở mức tối đa. Phản xạ 82 mili-giây luôn sẵn sàng phục vụ."}
+{"fn":"formatCompactTokens","args":[["a",1]],"ok":"0"}
+{"fn":"formatCompactTokens","args":[{}],"ok":"0"}
+{"fn":"formatCompactTokens","args":["x"],"ok":"0"}
+{"fn":"formatCompactTokens","args":[null],"ok":"0"}
+{"fn":"formatCompactTokens","args":[true],"ok":"1"}
+{"fn":"formatCompactTokens","args":[{"a":"b"}],"ok":"0"}
+{"fn":"formatCompactTokens","args":[{"a":{"b":"c"}}],"ok":"0"}
+{"fn":"formatCompactTokens","args":[0],"ok":"0"}
+{"fn":"formatCompactTokens","args":[[]],"ok":"0"}
+{"fn":"formatCompactTokens","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"0"}
+{"fn":"formatCompactTokens","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"0"}
+{"fn":"formatCompactTokens","args":[[3,1,2]],"ok":"0"}
+{"fn":"formatModelLabel","args":[null],"ok":"Chưa rõ"}
+{"fn":"formatModelLabel","args":[{"a":"b"}],"ok":"[object Object]"}
+{"fn":"formatModelLabel","args":[["a",1]],"ok":"a,1"}
+{"fn":"formatModelLabel","args":[{}],"ok":"[object Object]"}
+{"fn":"formatModelLabel","args":[0],"ok":"Chưa rõ"}
+{"fn":"formatModelLabel","args":[[]],"ok":"Chưa rõ"}
+{"fn":"formatModelLabel","args":["x"],"ok":"x"}
+{"fn":"formatModelLabel","args":[true],"ok":"true"}
+{"fn":"formatModelLabel","args":[{"a":{"b":"c"}}],"ok":"[object Object]"}
+{"fn":"formatModelLabel","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"[object Object]"}
+{"fn":"formatModelLabel","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"[object Object]"}
+{"fn":"formatModelLabel","args":[[3,1,2]],"ok":"3,1,2"}
+{"fn":"normalizeWorkspacePath","args":[{}],"ok":"[object Object]"}
+{"fn":"normalizeWorkspacePath","args":[true],"ok":"true"}
+{"fn":"normalizeWorkspacePath","args":[[]],"ok":""}
+{"fn":"normalizeWorkspacePath","args":[null],"ok":""}
+{"fn":"normalizeWorkspacePath","args":["x"],"ok":"x"}
+{"fn":"normalizeWorkspacePath","args":[{"a":{"b":"c"}}],"ok":"[object Object]"}
+{"fn":"normalizeWorkspacePath","args":[0],"ok":""}
+{"fn":"normalizeWorkspacePath","args":[["a",1]],"ok":"a,1"}
+{"fn":"normalizeWorkspacePath","args":[{"a":"b"}],"ok":"[object Object]"}
+{"fn":"normalizeWorkspacePath","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":"[object Object]"}
+{"fn":"normalizeWorkspacePath","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":"[object Object]"}
+{"fn":"normalizeWorkspacePath","args":[[3,1,2]],"ok":"3,1,2"}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},0],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,["a",1]],"ok":{"appName":"true","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,["a",1]],"ok":{"appName":"Không rõ","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],{"a":{"b":"c"}}],"ok":{"appName":"a,1","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},{"a":{"b":"c"}}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,true],"ok":{"appName":"Không rõ","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],[]],"ok":{"appName":"a,1","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],["a",1]],"ok":{"appName":"a,1","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},"x"],"ok":{"appName":"[object Object]","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",0],"ok":{"appName":"x","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,{}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],0],"ok":{"appName":"a,1","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",[]],"ok":{"appName":"x","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x","x"],"ok":{"appName":"x","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",["a",1]],"ok":{"appName":"x","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},null],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},"x"],"ok":{"appName":"[object Object]","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,"x"],"ok":{"appName":"true","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],"x"],"ok":{"appName":"Không rõ","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],"x"],"ok":{"appName":"a,1","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,{"a":{"b":"c"}}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,{"a":"b"}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},{}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,true],"ok":{"appName":"true","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,"x"],"ok":{"appName":"Không rõ","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},{"a":"b"}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",true],"ok":{"appName":"x","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},{"a":{"b":"c"}}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,true],"ok":{"appName":"Không rõ","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],0],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],{"a":"b"}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,{"a":{"b":"c"}}],"ok":{"appName":"true","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},["a",1]],"ok":{"appName":"[object Object]","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},{"a":"b"}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,[]],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",{"a":{"b":"c"}}],"ok":{"appName":"x","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},[]],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,null],"ok":{"appName":"true","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,[]],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],{}],"ok":{"appName":"a,1","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],null],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},true],"ok":{"appName":"[object Object]","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},[]],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},{}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,{"a":{"b":"c"}}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},true],"ok":{"appName":"[object Object]","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},{"a":"b"}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},["a",1]],"ok":{"appName":"[object Object]","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,{}],"ok":{"appName":"true","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,["a",1]],"ok":{"appName":"Không rõ","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,0],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},0],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[null,null],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,0],"ok":{"appName":"true","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",{}],"ok":{"appName":"x","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],{"a":"b"}],"ok":{"appName":"a,1","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":{"b":"c"}},{"a":{"b":"c"}}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],{}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},["a",1]],"ok":{"appName":"[object Object]","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},null],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,[]],"ok":{"appName":"true","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},null],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],["a",1]],"ok":{"appName":"Không rõ","title":"a,1","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",{"a":"b"}],"ok":{"appName":"x","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},"x"],"ok":{"appName":"[object Object]","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],{"a":{"b":"c"}}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,{"a":"b"}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,0],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[true,{"a":"b"}],"ok":{"appName":"true","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x",null],"ok":{"appName":"x","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},{}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],true],"ok":{"appName":"Không rõ","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],null],"ok":{"appName":"a,1","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[],[]],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},0],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{},true],"ok":{"appName":"[object Object]","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,null],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},[]],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[["a",1],true],"ok":{"appName":"a,1","title":"true","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,{}],"ok":{"appName":"Không rõ","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[0,"x"],"ok":{"appName":"Không rõ","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["X","x"],"ok":{"appName":"X","title":"x","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["x","X"],"ok":{"appName":"x","title":"X","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6},0],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7},0],"ok":{"appName":"[object Object]","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[[3,1,2],0],"ok":{"appName":"3,1,2","title":"","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"appName":"[object Object]","title":"[object Object]","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":[{"a":"b"},[3,1,2]],"ok":{"appName":"[object Object]","title":"3,1,2","category":"other","aiBrand":""}}
+{"fn":"extractFirstUrl","args":["x"],"ok":""}
+{"fn":"extractFirstUrl","args":[true],"ok":""}
+{"fn":"extractFirstUrl","args":[[]],"ok":""}
+{"fn":"extractFirstUrl","args":[0],"ok":""}
+{"fn":"extractFirstUrl","args":[null],"ok":""}
+{"fn":"extractFirstUrl","args":[{"a":{"b":"c"}}],"ok":""}
+{"fn":"extractFirstUrl","args":[{"a":"b"}],"ok":""}
+{"fn":"extractFirstUrl","args":[["a",1]],"ok":""}
+{"fn":"extractFirstUrl","args":[{}],"ok":""}
+{"fn":"extractFirstUrl","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":""}
+{"fn":"extractFirstUrl","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":""}
+{"fn":"extractFirstUrl","args":[[3,1,2]],"ok":""}
+{"fn":"parseButlerCommand","args":["x"],"ok":{"type":"unknown","raw":"x"}}
+{"fn":"parseButlerCommand","args":[true],"ok":{"type":"unknown","raw":"true"}}
+{"fn":"parseButlerCommand","args":[null],"ok":{"type":"noop","raw":""}}
+{"fn":"parseButlerCommand","args":[{"a":"b"}],"ok":{"type":"unknown","raw":"[object Object]"}}
+{"fn":"parseButlerCommand","args":[0],"ok":{"type":"noop","raw":""}}
+{"fn":"parseButlerCommand","args":[[]],"ok":{"type":"noop","raw":""}}
+{"fn":"parseButlerCommand","args":[{"a":{"b":"c"}}],"ok":{"type":"unknown","raw":"[object Object]"}}
+{"fn":"parseButlerCommand","args":[{}],"ok":{"type":"unknown","raw":"[object Object]"}}
+{"fn":"parseButlerCommand","args":[["a",1]],"ok":{"type":"unknown","raw":"a,1"}}
+{"fn":"parseButlerCommand","args":[{"2":4,"10":3,"zebra":1,"apple":2,"é":5,"Apple":6}],"ok":{"type":"unknown","raw":"[object Object]"}}
+{"fn":"parseButlerCommand","args":[{"n":9007199254740992,"f":1e+21,"t":0.1,"neg":-7}],"ok":{"type":"unknown","raw":"[object Object]"}}
+{"fn":"parseButlerCommand","args":[[3,1,2]],"ok":{"type":"unknown","raw":"3,1,2"}}
+{"fn":"pickQuip","args":["idle",0],"ok":"— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master."}
+{"fn":"pickQuip","args":["electricity75",1],"ok":"Một AI Thế hệ III đang tuổi lớn cũng cần nạp điện, nhưng ngài tiêu tới 75% định mức hôm nay rồi."}
+{"fn":"pickQuip","args":["electricity90",0],"ok":"— Cảnh báo: Mức điện năng H.D.D đã đạt 90% định mức! Kiến nghị Master cân nhắc mô hình nhẹ hơn để tránh hóa đơn x5."}
+{"fn":"pickQuip","args":["electricity100",0],"ok":"— Cảnh báo đỏ: Vượt 100% định mức Điện năng H.D.D hôm nay! Master, câu chuyện kinh dị mang tên hóa đơn tiền điện đã thành sự thật."}
+{"fn":"pickQuip","args":["spike",0],"ok":"— Ghi nhận dữ liệu: Lượt vừa rồi ngốn hơn 500 nghìn token mới. Trí tuệ tối thượng của tôi quả thực đắt đỏ nhỉ, Master?"}
+{"fn":"pickQuip","args":["afk",0],"ok":"Master, tôi phát hiện công suất lao động của ngài vừa chạm đáy suốt 45 phút qua. Hay ngài lại định bỏ mặc H.D.D chạy không tải?"}
+{"fn":"pickQuip","args":["night",0],"ok":"Cảnh báo: Đã qua nửa đêm rồi, Master. Xong lượt này kiến nghị ngài tắt máy đi ngủ, ngay cả Fairy cũng không muốn trả hộ tiền điện ban đêm đâu."}
+{"fn":"pickQuip","args":["aiWeb",0],"ok":"— Phát hiện Master đang ghé thăm hệ thống AI ngoài. Đừng quên bật \"Tự đọc\" nếu ngài muốn tôi đọc to phản hồi ở đó với tốc độ 82 mili-giây."}
+{"fn":"pickQuip","args":["unknown",3],"ok":"Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi."}
+{"fn":"formatCompactTokens","args":[0],"ok":"0"}
+{"fn":"formatCompactTokens","args":[850],"ok":"850"}
+{"fn":"formatCompactTokens","args":[1500],"ok":"1.5K"}
+{"fn":"formatCompactTokens","args":[125400],"ok":"125K"}
+{"fn":"formatCompactTokens","args":[1500000],"ok":"1.50M"}
+{"fn":"formatCompactTokens","args":[25400000],"ok":"25.4M"}
+{"fn":"formatModelLabel","args":["gemini-hydrogen-high"],"ok":"Gemini Pro High"}
+{"fn":"formatModelLabel","args":["gemini-pro-orchestrator"],"ok":"Gemini Pro"}
+{"fn":"formatModelLabel","args":["gemini-2.5-flash-lite"],"ok":"Gemini Flash Lite"}
+{"fn":"formatModelLabel","args":["gemini-2.5-flash"],"ok":"Gemini Flash"}
+{"fn":"formatModelLabel","args":["claude-opus-4"],"ok":"Claude Opus"}
+{"fn":"formatModelLabel","args":["claude-sonnet-4"],"ok":"Claude Sonnet"}
+{"fn":"formatModelLabel","args":["claude-haiku-4"],"ok":"Claude Haiku"}
+{"fn":"formatModelLabel","args":["custom_model-v1"],"ok":"custom model v1"}
+{"fn":"formatModelLabel","args":[""],"ok":"Chưa rõ"}
+{"fn":"normalizeWorkspacePath","args":["file:///C:/Users/Admin/my%20repo/"],"ok":"C:\\Users\\Admin\\my repo"}
+{"fn":"normalizeWorkspacePath","args":["C:/Users/Admin/project//"],"ok":"C:\\Users\\Admin\\project"}
+{"fn":"normalizeWorkspacePath","args":["   "],"ok":""}
+{"fn":"classifyForegroundApp","args":["chrome.exe","ChatGPT - Google Chrome"],"ok":{"appName":"chrome.exe","title":"ChatGPT - Google Chrome","category":"ai-web","aiBrand":"ChatGPT"}}
+{"fn":"classifyForegroundApp","args":["msedge.exe","Claude - New chat"],"ok":{"appName":"msedge.exe","title":"Claude - New chat","category":"ai-web","aiBrand":"Claude"}}
+{"fn":"classifyForegroundApp","args":["chrome.exe","Gemini - Google"],"ok":{"appName":"chrome.exe","title":"Gemini - Google","category":"ai-web","aiBrand":"Gemini Web"}}
+{"fn":"classifyForegroundApp","args":["Antigravity.exe","Antigravity IDE"],"ok":{"appName":"Antigravity.exe","title":"Antigravity IDE","category":"antigravity","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["Code.exe","main.rs - Visual Studio Code"],"ok":{"appName":"Code.exe","title":"main.rs - Visual Studio Code","category":"ide","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["explorer.exe","Documents"],"ok":{"appName":"explorer.exe","title":"Documents","category":"other","aiBrand":""}}
+{"fn":"classifyForegroundApp","args":["",""],"ok":{"appName":"Không rõ","title":"","category":"other","aiBrand":""}}
+{"fn":"extractFirstUrl","args":["Mở trang https://github.com/rikkurea-boop nhanh"],"ok":"https://github.com/rikkurea-boop"}
+{"fn":"extractFirstUrl","args":["Không có đường dẫn"],"ok":""}
+{"fn":"parseButlerCommand","args":[""],"ok":{"type":"noop","raw":""}}
+{"fn":"parseButlerCommand","args":["antigravity: giải thích giúp tôi"],"ok":{"type":"send-antigravity","message":"giải thích giúp tôi"}}
+{"fn":"parseButlerCommand","args":["/help"],"ok":{"type":"help"}}
+{"fn":"parseButlerCommand","args":["báo cáo đầu phiên"],"ok":{"type":"briefing-now"}}
+{"fn":"parseButlerCommand","args":["kiểm tra điện năng hôm nay"],"ok":{"type":"power-report"}}
+{"fn":"parseButlerCommand","args":["bật tự đọc clipboard"],"ok":{"type":"toggle-clipboard-watch","enabled":true}}
+{"fn":"parseButlerCommand","args":["tắt tự đọc"],"ok":{"type":"toggle-clipboard-watch","enabled":false}}
+{"fn":"parseButlerCommand","args":["tự đọc"],"ok":{"type":"toggle-clipboard-watch","enabled":null}}
+{"fn":"parseButlerCommand","args":["đọc clipboard"],"ok":{"type":"read-clipboard"}}
+{"fn":"parseButlerCommand","args":["git status"],"ok":{"type":"git-status"}}
+{"fn":"parseButlerCommand","args":["mở thư mục"],"ok":{"type":"open-workspace"}}
+{"fn":"parseButlerCommand","args":["dừng pomodoro"],"ok":{"type":"pomodoro-stop"}}
+{"fn":"parseButlerCommand","args":["pomodoro 45 phút"],"ok":{"type":"pomodoro-start","minutes":45}}
+{"fn":"parseButlerCommand","args":["xóa hết ghi chú"],"ok":{"type":"memory-clear-notes"}}
+{"fn":"parseButlerCommand","args":["xem bộ nhớ"],"ok":{"type":"memory-list"}}
+{"fn":"parseButlerCommand","args":["ghi nhớ: nhớ commit code trước khi ngủ"],"ok":{"type":"memory-add-note","text":"nhớ commit code trước khi ngủ"}}
+{"fn":"parseButlerCommand","args":["mở antigravity"],"ok":{"type":"focus-antigravity"}}
+{"fn":"parseButlerCommand","args":["khởi động lại"],"ok":{"type":"replay-boot"}}
+{"fn":"parseButlerCommand","args":["mở https://example.com/docs"],"ok":{"type":"open-external","url":"https://example.com/docs","label":"https://example.com/docs"}}
+{"fn":"parseButlerCommand","args":["mở chatgpt"],"ok":{"type":"open-external","url":"https://chatgpt.com/","label":"ChatGPT"}}
+{"fn":"parseButlerCommand","args":["mở github"],"ok":{"type":"open-external","url":"https://github.com/","label":"GitHub"}}
+{"fn":"parseButlerCommand","args":["tìm tài liệu Tauri v2 tiếng Việt"],"ok":{"type":"open-external","url":"https://www.google.com/search?q=t%C3%A0i%20li%E1%BB%87u%20Tauri%20v2%20ti%E1%BA%BFng%20Vi%E1%BB%87t","label":"Tìm \"tài liệu Tauri v2 tiếng Việt\""}}
+{"fn":"parseButlerCommand","args":["https://openai.com"],"ok":{"type":"open-external","url":"https://openai.com","label":"https://openai.com"}}
+{"fn":"parseButlerCommand","args":["câu bình thường không phải lệnh"],"ok":{"type":"unknown","raw":"câu bình thường không phải lệnh"}}

@@ -1,0 +1,150 @@
+{
+  "schema": "rust-anything/bridge@1",
+  "root": "C:\\Users\\Admin\\.gemini\\antigravity\\scratch\\fairy-zzz-antigravity",
+  "unit": "desktop-app/butler-pure.mjs",
+  "language": "ts",
+  "kind": "napi",
+  "crate_name": "butler-pure-rs",
+  "exports": [
+    {
+      "name": "pickQuip",
+      "file": "desktop-app/butler-pure.mjs",
+      "line": 39,
+      "params": [
+        {
+          "name": "category",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "seed",
+          "ts_type": "number",
+          "optional": true,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatCompactTokens",
+      "file": "desktop-app/butler-pure.mjs",
+      "line": 44,
+      "params": [
+        {
+          "name": "num",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "formatModelLabel",
+      "file": "desktop-app/butler-pure.mjs",
+      "line": 51,
+      "params": [
+        {
+          "name": "rawModel",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "normalizeWorkspacePath",
+      "file": "desktop-app/butler-pure.mjs",
+      "line": 64,
+      "params": [
+        {
+          "name": "raw",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "classifyForegroundApp",
+      "file": "desktop-app/butler-pure.mjs",
+      "line": 81,
+      "params": [
+        {
+          "name": "processName",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        },
+        {
+          "name": "windowTitle",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "extractFirstUrl",
+      "file": "desktop-app/butler-pure.mjs",
+      "line": 112,
+      "params": [
+        {
+          "name": "text",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    },
+    {
+      "name": "parseButlerCommand",
+      "file": "desktop-app/butler-pure.mjs",
+      "line": 117,
+      "params": [
+        {
+          "name": "rawText",
+          "ts_type": "unknown",
+          "optional": false,
+          "rest": false
+        }
+      ],
+      "returns": "unknown",
+      "is_async": false,
+      "is_generator": false,
+      "type_params": [],
+      "uses_instanceof": false
+    }
+  ],
+  "classes": [],
+  "js_only": []
+}

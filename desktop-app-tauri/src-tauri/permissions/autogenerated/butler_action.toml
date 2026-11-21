@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-butler-action"
+description = "Enables the butler_action command without any pre-configured scope."
+commands.allow = ["butler_action"]
+
+[[permission]]
+identifier = "deny-butler-action"
+description = "Denies the butler_action command without any pre-configured scope."
+commands.deny = ["butler_action"]

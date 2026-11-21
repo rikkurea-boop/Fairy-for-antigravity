@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-hybrid-action"
+description = "Enables the hybrid_action command without any pre-configured scope."
+commands.allow = ["hybrid_action"]
+
+[[permission]]
+identifier = "deny-hybrid-action"
+description = "Denies the hybrid_action command without any pre-configured scope."
+commands.deny = ["hybrid_action"]

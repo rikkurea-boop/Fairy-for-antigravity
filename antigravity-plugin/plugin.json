@@ -1,0 +1,15 @@
+{
+  "name": "fairy-zzz",
+  "displayName": "Fairy III · H.D.D (VI)",
+  "version": "0.1.0",
+  "description": "Giao diện H.D.D + mắt Fairy (Zenless Zone Zero) đồng bộ trạng thái Antigravity kèm âm thanh boot và nhân cách Fairy tiếng Việt luôn bật tối ưu hiệu suất.",
+  "logo": "icon.svg",
+  "license": "MIT",
+  "repository": "https://github.com/AssassinVIX/fairy-zzz-plugin",
+  "keywords": ["fairy", "zzz", "zenless-zone-zero", "hdd", "vietnamese", "hud", "persona"],
+  "suggestedPrompts": [
+    "Fairy, kiểm tra trạng thái dự án hiện tại và tóm tắt nhanh giúp Chủ nhân",
+    "Fairy, rà soát lỗi và đề xuất phương án sửa ngắn gọn nhất cho tệp này",
+    "Fairy, lập kế hoạch triển khai tính năng mới theo từng bước rõ ràng"
+  ]
+}

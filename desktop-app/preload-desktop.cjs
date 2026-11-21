@@ -1,0 +1,23 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('fairyDesktop', {
+  setIgnoreMouse: (ignore) => ipcRenderer.send('fairy:set-ignore-mouse', Boolean(ignore)),
+  setShape: (rects) => ipcRenderer.send('fairy:set-shape', Array.isArray(rects) ? rects : null),
+  getState: () => ipcRenderer.invoke('fairy:get-state'),
+  onState: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('fairy:state', handler);
+    return () => ipcRenderer.removeListener('fairy:state', handler);
+  },
+  onCommand: (cb) => {
+    const handler = (_event, cmd) => cb(cmd);
+    ipcRenderer.on('fairy:cmd', handler);
+    return () => ipcRenderer.removeListener('fairy:cmd', handler);
+  },
+  notifyReady: () => ipcRenderer.send('fairy:ready'),
+  getStartup: () => ipcRenderer.invoke('fairy:get-startup'),
+  setStartup: (enabled) => ipcRenderer.invoke('fairy:set-startup', Boolean(enabled)),
+  triggerVoice: (payload) => ipcRenderer.invoke('fairy:trigger-voice', payload),
+  hybridAction: (req) => ipcRenderer.invoke('fairy:hybrid-action', req),
+  quit: () => ipcRenderer.send('fairy:quit'),
+});

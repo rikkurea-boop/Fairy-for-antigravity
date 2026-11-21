@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="vi" data-fz3-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fairy III · H.D.D Overlay</title>
+  <link rel="stylesheet" href="/desktop-fairy.css">
+</head>
+<body>
+  <div id="layer" class="fz3-layer" data-phase="boot" data-mood="idle" data-drag="1" data-dragging="0" data-chrome="1" data-rate="1">
+    <!-- Atmospheric border, corner brand & soundwave (click-through, shown in dock phase) -->
+    <div id="atmos-wrap" class="fz3-atmos" aria-hidden="true">
+      <div class="fz3-atmos-frame"></div>
+      <div class="fz3-atmos-glow"></div>
+      <div class="fz3-atmos-sweep"></div>
+    </div>
+
+    <div id="corner-brand" class="fz3-sb-brand" aria-hidden="true">
+      <span id="corner-logo" class="fz3-sb-logo"></span>
+      <span class="fz3-sb-text">
+        <b>Fairy</b>
+        <i>Ⅲ · H.D.D TERMINAL</i>
+      </span>
+    </div>
+
+    <div id="corner-wave" class="fz3-wave" aria-hidden="true">
+      <span class="fz3-wave-dot"></span>
+      <span class="fz3-wave-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="fz3-wave-slider"><b></b></span>
+      <span class="fz3-wave-slider fz3-wave-slider-2"><b></b></span>
+    </div>
+
+    <!-- Fullscreen Boot & Greet Backdrop (fades to transparent in dock phase) -->
+    <div id="screen" class="fz3-screen">
+      <div class="fz3-bg"></div>
+      <div class="fz3-hero"></div>
+      <div class="fz3-veil"></div>
+
+      <!-- Boot Video Stage -->
+      <div id="boot-stage" class="fz3-boot">
+        <div class="fz3-boot-fill" aria-hidden="true"></div>
+        <video id="boot-video" poster="/assets/poster.jpg" playsinline preload="auto"></video>
+        <div class="fz3-boot-hud">
+          <div class="fz3-boot-top">
+            <span>H.D.D // TRÌNH TỰ KHỞI ĐỘNG</span>
+            <span>FAIRY.OS <b>3.01</b></span>
+          </div>
+          <span class="fz3-corner tl" aria-hidden="true"></span>
+          <span class="fz3-corner tr" aria-hidden="true"></span>
+          <span class="fz3-corner bl" aria-hidden="true"></span>
+          <span class="fz3-corner br" aria-hidden="true"></span>
+          <div class="fz3-boot-foot">
+            <div class="fz3-boot-row">
+              <span class="fz3-boot-title">H.D.D // KHỞI ĐỘNG HỆ THỐNG</span>
+              <span class="fz3-boot-checks">
+                <span>CORE LINK</span>
+                <span>ANTIGRAVITY SYNC</span>
+                <span>AUDIO BUS</span>
+              </span>
+            </div>
+            <div class="fz3-boot-row">
+              <span class="fz3-boot-bar"><span id="boot-bar"></span></span>
+              <span id="boot-pct" class="fz3-boot-pct">0%</span>
+              <button id="btn-skip-boot" type="button" class="fz3-skip" data-interactive="1">BỎ QUA ▸</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button id="btn-skip-greet" type="button" class="fz3-skip2 hidden" data-interactive="1">VÀO CHẾ ĐỘ NEO ▸</button>
+    </div>
+
+    <!-- Centered Greeting Copy -->
+    <div id="greet-copy" class="fz3-copy">
+      <div class="fz3-copy-kicker">H.D.D CORE // TRỰC TUYẾN</div>
+      <div class="fz3-copy-title-vi">H Ệ &nbsp; T H Ố N G &nbsp; L Ặ N &nbsp; S Â U &nbsp; H O L L O W</div>
+      <div class="fz3-copy-title-wrap">
+        <div class="fz3-copy-title" data-text="HOLLOW DEEP DIVE SYSTEM">HOLLOW DEEP DIVE SYSTEM</div>
+      </div>
+      <div class="fz3-copy-lines">
+        <span id="greet-line">Master, hệ thống Fairy III đã sẵn sàng.</span>
+      </div>
+      <div class="fz3-copy-sub">AI TỔNG HỢP ĐA NĂNG THẾ HỆ III · DESKTOP H.D.D OVERLAY</div>
+    </div>
+
+    <!-- Floating Interactive Fairy Eye Core (DSH left-docked position) -->
+    <div id="core" class="fz3-core" data-interactive="1" aria-label="Fairy">
+      <div id="main-eye" class="fz3-eye" data-blink="0">
+        <span id="eye-halo-slot" class="fz3-halo-slot" aria-hidden="true"></span>
+        <span id="eye-pulse-slot" class="fz3-pulse-slot" aria-hidden="true"></span>
+        <span class="fz3-eye-halo" aria-hidden="true"></span>
+        <div id="main-eye-svg" class="fz3-eye-svg" aria-hidden="true"></div>
+        <span class="fz3-eye-scan" aria-hidden="true"></span>
+        <span class="fz3-eye-flash" aria-hidden="true"></span>
+      </div>
+    </div>
+
+    <!-- DSH-style Status Bubble / Hybrid Chat Bridge anchored next to Fairy Eye -->
+    <div id="bubble" class="fz3-bubble hidden" data-interactive="1" data-side="right" data-mode="usage">
+      <div class="fz3-bubble-head-row">
+        <span id="bubble-head" class="fz3-bubble-head">FAIRY III // GIÁM SÁT H.D.D</span>
+        <span id="b-hybrid-badge" class="fz3-hybrid-badge" title="Liên kết Plugin Antigravity">HYBRID</span>
+        <span id="b-voice-badge" class="fz3-voice-badge hidden">ĐANG NGHE</span>
+        <button id="btn-expand-bubble" type="button" class="fz3-bubble-x" title="Mở rộng / Thu gọn">▾</button>
+        <button id="btn-close-bubble" type="button" class="fz3-bubble-x" title="Đóng">✕</button>
+      </div>
+      <div class="fz3-bubble-row fz3-bubble-stat">
+        <span class="fz3-bubble-k">Biểu cảm</span>
+        <span id="b-status" class="fz3-bubble-v"><b>Quan sát</b></span>
+      </div>
+      <div class="fz3-bubble-row fz3-bubble-detail">
+        <span class="fz3-bubble-k">Mô hình</span>
+        <span id="b-model" class="fz3-bubble-v">—</span>
+      </div>
+      <div class="fz3-bubble-row fz3-bubble-detail">
+        <span class="fz3-bubble-k">Công cụ</span>
+        <span id="b-tool" class="fz3-bubble-v">—</span>
+      </div>
+      <div class="fz3-bubble-row fz3-bubble-detail">
+        <span class="fz3-bubble-k">Phiên</span>
+        <span id="b-counts" class="fz3-bubble-v">0 lượt · 0 tool</span>
+      </div>
+      <div id="b-quip" class="fz3-bubble-sub"></div>
+      <form id="b-chat-form" class="fz3-b-chat">
+        <input id="b-chat-input" type="text" class="fz3-b-input" placeholder="Gửi lệnh / chat thẳng vào Antigravity..." autocomplete="off">
+        <button id="b-chat-send" type="submit" class="fz3-b-send">Gửi</button>
+        <button id="btn-b-mic" type="button" class="fz3-b-mic" title="Bật Voice Mode (Đàm thoại trực tiếp)">🔊</button>
+      </form>
+      <div class="fz3-conv-row">
+        <select id="b-conv-select" class="fz3-conv-select" title="Chọn phiên Antigravity"></select>
+        <button id="btn-b-newconv" type="button" class="fz3-mini-act fz3-conv-new" title="Tạo phiên chat mới">+ Phiên</button>
+      </div>
+      <div id="b-actions" class="fz3-bubble-actions">
+        <button id="btn-b-boot" type="button" class="fz3-mini-act">▶ Boot</button>
+        <button id="btn-b-greet" type="button" class="fz3-mini-act">◈ Chào</button>
+        <button id="btn-b-reset" type="button" class="fz3-mini-act">↺ Vị trí</button>
+        <button id="btn-b-settings" type="button" class="fz3-mini-act">⚙ Cài đặt</button>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fz3-settings-backdrop hidden" data-interactive="1">
+      <div class="fz3-set-card">
+        <div class="fz3-set-head">
+          <span id="set-eye-slot" class="fz3-set-eye" aria-hidden="true"></span>
+          <div>
+            <div class="fz3-set-name">Fairy · III-Type H.D.D</div>
+            <div class="fz3-set-sub">Desktop Overlay · Phím tắt Alt/Cmd+Shift+F</div>
+          </div>
+          <button id="btn-close-settings" type="button" class="fz3-bubble-x" style="margin-left:auto">✕</button>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Tự phát Boot + Âm thanh khi mở app</div>
+            <div class="fz3-set-desc">Chạy video khởi động H.D.D mỗi lần mở Fairy Overlay</div>
+          </div>
+          <button id="sw-autoboot" type="button" class="fz3-set-switch" data-on="1"></button>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Khởi động cùng máy (Intro mở máy)</div>
+            <div class="fz3-set-desc">Chạy Fairy H.D.D ngay khi đăng nhập Windows / macOS trước các app khác</div>
+          </div>
+          <button id="sw-startup" type="button" class="fz3-set-switch" data-on="1"></button>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Âm lượng Boot: <b id="vol-label">85%</b></div>
+            <div class="fz3-set-desc">Áp dụng cho video khởi động H.D.D</div>
+          </div>
+          <input id="rng-volume" class="fz3-range" type="range" min="0" max="100" value="85">
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Tốc độ hoạt ảnh mắt Fairy</div>
+            <div class="fz3-set-desc">Đồng bộ nhịp thở, sóng xung & xoay viền theo Fairy-DSH</div>
+          </div>
+          <div class="fz3-set-seg">
+            <button type="button" class="fz3-set-segbtn" data-rate-pick="0.7">0.7×</button>
+            <button type="button" class="fz3-set-segbtn" data-rate-pick="1">1.0×</button>
+            <button type="button" class="fz3-set-segbtn" data-rate-pick="1.5">1.5×</button>
+          </div>
+        </div>
+
+        <div class="fz3-set-row fz3-set-stack">
+          <div class="fz3-set-label">Hành động khi Double-Click mắt Fairy</div>
+          <div class="fz3-set-desc">Kết nối tự động qua cấu trúc DOM (UI Automation) &amp; đồng bộ kênh Voice của Antigravity — không cần định vị thủ công</div>
+          <div class="fz3-set-seg fz3-set-seg-wrap" style="margin-top:7px">
+            <button type="button" class="fz3-set-segbtn" data-dbl-pick="voice-mode">🔊 Voice Mode</button>
+            <button type="button" class="fz3-set-segbtn" data-dbl-pick="hybrid-chat">🔗 Chat Hybrid</button>
+            <button type="button" class="fz3-set-segbtn" data-dbl-pick="win-voice">🗣️ Win+H</button>
+            <button type="button" class="fz3-set-segbtn" data-dbl-pick="toggle-bubble">📊 Bảng H.D.D</button>
+          </div>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Kéo thả mắt Fairy (Nhấp giữ 0.22s)</div>
+            <div class="fz3-set-desc">Nhấp giữ chuột trái 0.22 giây rồi kéo để di chuyển vị trí</div>
+          </div>
+          <button id="sw-drag" type="button" class="fz3-set-switch" data-on="1"></button>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Hiển thị viền H.D.D & sóng góc</div>
+            <div class="fz3-set-desc">Khung viền khí quyển, chữ góc trái và dải sóng âm</div>
+          </div>
+          <button id="sw-chrome" type="button" class="fz3-set-switch" data-on="1"></button>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Giao diện bong bóng</div>
+            <div class="fz3-set-desc">Chọn tông tối H.D.D hoặc sáng cho bảng trạng thái</div>
+          </div>
+          <div class="fz3-set-seg">
+            <button type="button" class="fz3-set-segbtn" data-theme-pick="dark">Tối (H.D.D)</button>
+            <button type="button" class="fz3-set-segbtn" data-theme-pick="light">Sáng</button>
+          </div>
+        </div>
+
+        <div class="fz3-set-row fz3-set-stack">
+          <div class="fz3-set-label">8 Biểu cảm & Trạng thái mắt (Thử 6 giây)</div>
+          <div class="fz3-preview-grid">
+            <button type="button" class="fz3-set-btn" data-preview-mood="idle">Quan sát</button>
+            <button type="button" class="fz3-set-btn" data-preview-mood="thinking">Suy luận</button>
+            <button type="button" class="fz3-set-btn" data-preview-mood="working">Thực thi</button>
+            <button type="button" class="fz3-set-btn" data-preview-mood="comforting">Dịu dàng</button>
+            <button type="button" class="fz3-set-btn" data-preview-mood="smug">Đắc ý</button>
+            <button type="button" class="fz3-set-btn" data-preview-mood="alert">Cảnh báo</button>
+            <button type="button" class="fz3-set-btn" data-preview-mood="done">Hoàn tất</button>
+            <button type="button" class="fz3-set-btn" data-preview-mood="sleepy">Trực đêm</button>
+          </div>
+        </div>
+
+        <div class="fz3-set-actions">
+          <button id="btn-s-reboot" type="button" class="fz3-set-btn">▶ Phát lại Boot</button>
+          <button id="btn-s-resetpos" type="button" class="fz3-set-btn">↺ Đặt lại vị trí (25vw / 52vh)</button>
+          <button id="btn-s-quit" type="button" class="fz3-set-btn is-danger">✕ Thoát Overlay</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/desktop-fairy.js"></script>
+</body>
+</html>

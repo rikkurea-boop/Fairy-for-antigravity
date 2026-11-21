@@ -1,0 +1,21 @@
+{
+  "command": "node",
+  "args": ["main.mjs"],
+  "restart_policy": "always",
+  "display_name": "Fairy H.D.D",
+  "description": "Giao diện H.D.D và đôi mắt Fairy III (Zenless Zone Zero) đồng bộ trạng thái Antigravity theo thời gian thực kèm video và âm thanh khởi động.",
+  "has_web_ui": true,
+  "agent_permissions": {
+    "allows_user_interactions": false
+  },
+  "ui_config": {
+    "display_name": "Fairy H.D.D",
+    "views": [
+      {
+        "path": "/",
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE",
+        "title": "Fairy H.D.D"
+      }
+    ]
+  }
+}

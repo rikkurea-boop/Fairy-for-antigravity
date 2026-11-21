@@ -938,6 +938,10 @@
       if (greetAudio !== audio) return;
       setTalkingState(true, 12000);
       clearTimeout(greetTimer);
+      const ms = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.ceil(audio.duration * 1000) + 700 : 6200;
+      greetTimer = setTimeout(() => {
+        if (phase === 'greet') setPhase('dock');
+      }, Math.min(8000, Math.max(2500, ms)));
     });
     audio.addEventListener('ended', () => {
       if (greetAudio !== audio) return;

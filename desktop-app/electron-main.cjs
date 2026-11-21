@@ -261,42 +261,54 @@ function mergeLatestCompleteTalker(talkerListsNewestFirst) {
   for (let i = talkerListsNewestFirst.length - 1; i >= 0; i -= 1) {
     chrono.push(...talkerListsNewestFirst[i]);
   }
-  if (!chrono.length) return { liveTalkerTime: '', liveTalkerText: '' };
+  if (!chrono.length) return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
 
-  const END_RE = /^([\s\S]*[.!?…]["”']?)(?:\s+([\s\S]*))?$/;
-  const tail = chrono.at(-1);
-  if (!tail || !tail.text) return { liveTalkerTime: '', liveTalkerText: '' };
+  const END_RE = /[.!?…]["”']?\s*$/;
+  const mergedItems = [];
+  let accText = '';
+  let accTs = '';
 
-  const mTail = END_RE.exec(tail.text);
-  let ts = tail.ts;
-
-  if (mTail && mTail[1]) {
-    const completeInTail = mTail[1].trim();
-    const firstTerm = /^([^.!?…]*[.!?…]["”']?)(?:\s+([\s\S]*))?$/.exec(completeInTail);
-    const prefix = firstTerm ? firstTerm[1].trim() : completeInTail;
-    const rest = firstTerm && firstTerm[2] ? firstTerm[2].trim() : '';
-
-    const parts = [];
-    for (let i = chrono.length - 2; i >= 0; i -= 1) {
-      const prevText = chrono[i]?.text || '';
-      if (!prevText) break;
-      const mPrev = END_RE.exec(prevText);
-      const incompleteSuffix = mPrev ? (mPrev[2] || '').trim() : prevText.trim();
-      if (!incompleteSuffix) break;
-      parts.unshift(incompleteSuffix.replace(/-\s*$/, '').trim() + (incompleteSuffix.trimEnd().endsWith('-') ? '' : ' '));
-      ts = chrono[i].ts || ts;
-      if (mPrev) break;
+  for (const item of chrono) {
+    const t = String(item?.text || '').trim();
+    if (!t) continue;
+    if (!accText) {
+      accText = t;
+      accTs = item.ts || '';
+    } else {
+      const noSpace = accText.trimEnd().endsWith('-');
+      const cleanPrev = accText.replace(/-\s*$/, '').trim();
+      accText = `${cleanPrev}${noSpace ? '' : ' '}${t}`.trim();
     }
-
-    const joinedFirst = parts.length ? `${parts.join('')}${prefix}`.trim() : prefix;
-    const merged = rest ? `${joinedFirst} ${rest}` : joinedFirst;
-    return {
-      liveTalkerTime: ts,
-      liveTalkerText: merged.slice(0, 340),
-    };
+    if (END_RE.test(accText)) {
+      mergedItems.push({ ts: accTs || item.ts || '', text: accText, complete: true });
+      accText = '';
+      accTs = '';
+    }
   }
 
-  return { liveTalkerTime: '', liveTalkerText: '' };
+  if (accText) {
+    mergedItems.push({ ts: accTs, text: accText, complete: false });
+  }
+  if (!mergedItems.length) return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
+
+  const tail = mergedItems.at(-1);
+  if (!tail.complete && tail.text.length < 12) {
+    const prevComplete = mergedItems.length >= 2 ? mergedItems[mergedItems.length - 2] : null;
+    if (prevComplete) {
+      return {
+        liveTalkerTime: prevComplete.ts,
+        liveTalkerText: prevComplete.text.slice(0, 340),
+        liveTalkerComplete: true,
+      };
+    }
+    return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
+  }
+
+  return {
+    liveTalkerTime: tail.ts,
+    liveTalkerText: tail.text.slice(0, 340),
+    liveTalkerComplete: tail.complete,
+  };
 }
 
 function cleanUserTranscriptText(raw) {
@@ -358,15 +370,15 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
           // Skip partial boundary line.
         }
       }
-      const { liveTalkerText, liveTalkerTime } = mergeLatestCompleteTalker(recentTalkerLists);
-      const data = { userText, modelText, modelRawText, liveTalkerText, liveTalkerTime, hasStepError, mtimeMs };
+      const { liveTalkerText, liveTalkerTime, liveTalkerComplete } = mergeLatestCompleteTalker(recentTalkerLists);
+      const data = { userText, modelText, modelRawText, liveTalkerText, liveTalkerTime, liveTalkerComplete, hasStepError, mtimeMs };
       dialogueCache.set(logPath, { key: cacheKey, data });
       return data;
     } catch {
       // Try next candidate.
     }
   }
-  return { userText: '', modelText: '', modelRawText: '', liveTalkerText: '', liveTalkerTime: '', hasStepError: false, mtimeMs: 0 };
+  return { userText: '', modelText: '', modelRawText: '', liveTalkerText: '', liveTalkerTime: '', liveTalkerComplete: false, hasStepError: false, mtimeMs: 0 };
 }
 
 const SLEEP_RE = /(\b(đi ngủ|ngủ ngon|ngủ đây|good\s*night|ngủ thôi)\b|buồn ngủ|thức khuya quá)/i;
@@ -728,6 +740,7 @@ function readSnapshot() {
       lastVoiceTime: 0,
       liveTalkerText: '',
       liveTalkerTime: '',
+      liveTalkerComplete: false,
       hybridConnected,
       sidecarPort,
       workspaceUris: sidecarEndpoint.workspaceUris || [],
@@ -770,6 +783,7 @@ function readSnapshot() {
     lastVoiceTime: Number(voiceChat.lastVoiceTime) || 0,
     liveTalkerText: dialogue.liveTalkerText || '',
     liveTalkerTime: dialogue.liveTalkerTime || '',
+    liveTalkerComplete: Boolean(dialogue.liveTalkerComplete),
     hybridConnected,
     sidecarPort,
     workspaceUris: sidecarEndpoint.workspaceUris || [],
@@ -1478,11 +1492,17 @@ let ttsEnabled = true;
 let ttsBusy = false;
 let ttsQueuedText = '';
 let ttsBaselineReady = false;
-let lastSpokenVoiceKey = '';
-let lastSpokenStopKey = '';
-let lastSpokenText = '';
+const spokenStateByConv = new Map();
 let voiceDebounceTimer = null;
 let stopDebounceTimer = null;
+
+function getConvSpokenState(convId) {
+  const key = convId || 'default';
+  if (!spokenStateByConv.has(key)) {
+    spokenStateByConv.set(key, { lastVoiceKey: '', lastStopKey: '', lastText: '', incompletePrefix: '' });
+  }
+  return spokenStateByConv.get(key);
+}
 
 function rejectPendingTts(reason) {
   for (const [id, entry] of ttsPending.entries()) {
@@ -1643,17 +1663,22 @@ async function enqueueFairySpeech(text) {
 }
 
 function getVoiceCandidate(snap) {
-  if (!snap) return { key: '', text: '' };
+  if (!snap) return { key: '', text: '', rawText: '', complete: true };
   if (snap.liveTalkerText) {
     const text = cleanTextForSpeech(snap.liveTalkerText);
-    if (!text) return { key: '', text: '' };
-    return { key: `live:${snap.conversationId}:${snap.liveTalkerTime}:${text.slice(0, 80)}`, text };
+    if (!text) return { key: '', text: '', rawText: '', complete: true };
+    return {
+      key: `live:${snap.conversationId}:${snap.liveTalkerTime}:${text.slice(0, 80)}`,
+      text,
+      rawText: snap.liveTalkerText,
+      complete: Boolean(snap.liveTalkerComplete),
+    };
   }
-  if (snap.voiceSessionEnded || !snap.lastVoiceText) return { key: '', text: '' };
+  if (snap.voiceSessionEnded || !snap.lastVoiceText) return { key: '', text: '', rawText: '', complete: true };
   const text = cleanTextForSpeech(snap.lastVoiceText);
-  if (!text) return { key: '', text: '' };
+  if (!text) return { key: '', text: '', rawText: '', complete: true };
   const stamp = snap.lastVoiceTime || snap.updatedAt || '';
-  return { key: `vc:${snap.conversationId}:${stamp}:${text.slice(0, 80)}`, text };
+  return { key: `vc:${snap.conversationId}:${stamp}:${text.slice(0, 80)}`, text, rawText: snap.lastVoiceText, complete: true };
 }
 
 function getStopCandidate(snap) {
@@ -1665,40 +1690,59 @@ function getStopCandidate(snap) {
 }
 
 function scheduleSpeechFromSnapshot(snap) {
+  if (!snap || !snap.conversationId) return;
   const voiceInit = getVoiceCandidate(snap);
   const stopInit = getStopCandidate(snap);
+  const convState = getConvSpokenState(snap.conversationId);
+
   if (!ttsBaselineReady) {
     ttsBaselineReady = true;
-    lastSpokenVoiceKey = voiceInit.key;
-    lastSpokenStopKey = stopInit.key;
-    lastSpokenText = voiceInit.text || stopInit.text || '';
+    convState.lastVoiceKey = voiceInit.key;
+    convState.lastStopKey = stopInit.key;
+    convState.lastText = voiceInit.text || stopInit.text || '';
     return;
   }
   if (!ttsEnabled || IS_SMOKE_TEST) return;
 
-  if (voiceInit.key && voiceInit.key !== lastSpokenVoiceKey) {
+  if (voiceInit.key && voiceInit.key !== convState.lastVoiceKey) {
     clearTimeout(voiceDebounceTimer);
     voiceDebounceTimer = setTimeout(() => {
       const latest = readSnapshot();
       const cand = getVoiceCandidate(latest);
-      if (!ttsEnabled || !cand.key || cand.key === lastSpokenVoiceKey) return;
-      lastSpokenVoiceKey = cand.key;
-      if (cand.text && cand.text !== lastSpokenText) {
-        lastSpokenText = cand.text;
-        enqueueFairySpeech(cand.text).catch(() => {});
+      const st = getConvSpokenState(latest?.conversationId);
+      if (!ttsEnabled || !cand.key || cand.key === st.lastVoiceKey) return;
+      st.lastVoiceKey = cand.key;
+
+      let toSpeak = cand.text;
+      if (st.incompletePrefix && cand.rawText && cand.rawText.startsWith(st.incompletePrefix)) {
+        const suffix = cleanTextForSpeech(cand.rawText.slice(st.incompletePrefix.length));
+        toSpeak = suffix;
+      }
+      st.incompletePrefix = cand.complete ? '' : cand.rawText;
+
+      if (toSpeak && toSpeak.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 4 && toSpeak !== st.lastText) {
+        st.lastText = toSpeak;
+        enqueueFairySpeech(toSpeak).catch(() => {});
       }
     }, 60);
   }
 
-  if (stopInit.key && stopInit.key !== lastSpokenStopKey) {
+  if (stopInit.key && stopInit.key !== convState.lastStopKey) {
+    const ageMs = Date.now() - Math.max(Number(snap.doneAt) || 0, Number(snap.updatedAt) || 0);
+    if (ageMs > 25000 && !convState.lastStopKey) {
+      convState.lastStopKey = stopInit.key;
+      return;
+    }
     clearTimeout(stopDebounceTimer);
     stopDebounceTimer = setTimeout(() => {
       const latest = readSnapshot();
       const cand = getStopCandidate(latest);
-      if (!ttsEnabled || !cand.key || cand.key === lastSpokenStopKey) return;
-      lastSpokenStopKey = cand.key;
-      if (cand.text && cand.text !== lastSpokenText) {
-        lastSpokenText = cand.text;
+      const st = getConvSpokenState(latest?.conversationId);
+      if (!ttsEnabled || !cand.key || cand.key === st.lastStopKey) return;
+      st.lastStopKey = cand.key;
+      st.incompletePrefix = '';
+      if (cand.text && cand.text !== st.lastText) {
+        st.lastText = cand.text;
         enqueueFairySpeech(cand.text).catch(() => {});
       }
     }, 120);

@@ -57,6 +57,16 @@ def split_speech_clauses(raw: str, max_chars: int = 340, max_clauses: int = 3):
     for part in parts:
         if not part or not re.search(r"[\wÀ-ỹ]", part, re.UNICODE):
             continue
+        if len(clauses) == 0 and len(part) > 95:
+            m_comma = re.search(r"[,;:]\s+", part[38:110])
+            if m_comma:
+                cut = 38 + m_comma.start() + 1
+                first_clause = part[:cut].strip()
+                rest_clause = part[cut:].strip()
+                if first_clause and rest_clause:
+                    clauses.append(first_clause)
+                    total_len += len(first_clause) + 1
+                    part = rest_clause
         if len(part) > 190:
             subparts = [sp.strip() for sp in re.split(r"(?<=[,;:])\s+", part) if sp.strip()]
             buf = ""
@@ -70,14 +80,14 @@ def split_speech_clauses(raw: str, max_chars: int = 340, max_clauses: int = 3):
                 else:
                     buf = f"{buf} {sp}".strip() if buf else sp
             if buf and len(clauses) < max_clauses and total_len < max_chars:
-                if not re.search(r"[.!?]$", buf):
+                if not re.search(r"[.,!?;:]$", buf):
                     buf += "."
                 clauses.append(buf)
                 total_len += len(buf) + 1
             if len(clauses) >= max_clauses or total_len >= max_chars:
                 break
             continue
-        if not re.search(r"[.!?]$", part):
+        if not re.search(r"[.,!?;:]$", part):
             part += "."
         if clauses and total_len + len(part) + 1 > max_chars:
             break

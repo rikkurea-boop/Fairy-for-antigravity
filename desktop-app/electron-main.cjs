@@ -219,6 +219,19 @@ function computeEffectiveMood(entry, now) {
 }
 
 const dialogueCache = new Map();
+function extractTalkerFromUserContent(raw) {
+  const s = String(raw || '');
+  const m = /<talker_agent_context>([\s\S]*?)<\/talker_agent_context>/i.exec(s);
+  if (!m) return { liveTalkerTime: '', liveTalkerText: '' };
+  const matches = Array.from(m[1].matchAll(/^\[([^\]]+)\]\s*talker:\s*"([^"]+)"/gm));
+  if (!matches.length) return { liveTalkerTime: '', liveTalkerText: '' };
+  const last = matches.at(-1);
+  return {
+    liveTalkerTime: String(last[1] || ''),
+    liveTalkerText: String(last[2] || '').replace(/\s+/g, ' ').trim().slice(0, 260),
+  };
+}
+
 function cleanUserTranscriptText(raw) {
   let s = String(raw || '');
   s = s.replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, ' ');
@@ -253,6 +266,8 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
       const lines = buf.subarray(start).toString('utf-8').split('\n').filter((l) => l.trim());
       let userText = '';
       let modelText = '';
+      let liveTalkerText = '';
+      let liveTalkerTime = '';
       let hasStepError = false;
       for (let i = lines.length - 1; i >= 0; i -= 1) {
         try {
@@ -261,6 +276,9 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
             modelText = item.content.replace(/\s+/g, ' ').trim().slice(0, 500);
           }
           if (!userText && item.type === 'USER_INPUT' && typeof item.content === 'string' && item.content.trim()) {
+            const talker = extractTalkerFromUserContent(item.content);
+            liveTalkerText = talker.liveTalkerText;
+            liveTalkerTime = talker.liveTalkerTime;
             userText = cleanUserTranscriptText(item.content).slice(0, 500);
           }
           if (!hasStepError && i >= lines.length - 4 && item.status === 'ERROR') {
@@ -271,14 +289,14 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
           // Skip partial boundary line.
         }
       }
-      const data = { userText, modelText, hasStepError, mtimeMs: st.mtimeMs };
+      const data = { userText, modelText, liveTalkerText, liveTalkerTime, hasStepError, mtimeMs: st.mtimeMs };
       dialogueCache.set(logPath, { key: cacheKey, data });
       return data;
     } catch {
       // Try next candidate.
     }
   }
-  return { userText: '', modelText: '', hasStepError: false, mtimeMs: 0 };
+  return { userText: '', modelText: '', liveTalkerText: '', liveTalkerTime: '', hasStepError: false, mtimeMs: 0 };
 }
 
 const SLEEP_RE = /(\b(đi ngủ|ngủ ngon|ngủ đây|good\s*night|ngủ thôi)\b|buồn ngủ|thức khuya quá)/i;
@@ -345,11 +363,13 @@ function parseVoiceChatFile(filePath, now = Date.now(), maxStaleMs = Infinity) {
     const lastVoiceText = String(lastVoiceLine?.text || '').replace(/\s+/g, ' ').trim().slice(0, 260);
     const ownerStartMs = ownerChat?.startedAt ? Date.parse(ownerChat.startedAt) || 0 : 0;
     const lastVoiceTime = (lastVoiceLine?.time ? Date.parse(lastVoiceLine.time) : 0) || ownerStartMs || startedAtMs || st.mtimeMs;
+    const voiceSessionEnded = Boolean(stoppedAtMs > 0 && stoppedAtMs >= lastVoiceTime);
     const isRunning = Boolean(startedAtMs > 0 && !stoppedAtMs && now - Math.max(startedAtMs, lastVoiceTime, st.mtimeMs) < 120000);
-    const isRecentLine = Boolean(lastVoiceText) && lastVoiceTime > 0 && now - lastVoiceTime < 25000 && (!stoppedAtMs || stoppedAtMs < lastVoiceTime);
+    const isRecentLine = Boolean(lastVoiceText) && lastVoiceTime > 0 && now - lastVoiceTime < 25000 && !voiceSessionEnded;
 
     return {
       voiceActive: isRunning || isRecentLine,
+      voiceSessionEnded,
       lastVoiceText,
       lastVoiceTime,
       summary: String(lastChat.summary || '').trim(),
@@ -633,8 +653,11 @@ function readSnapshot() {
       dialogueQuip: '',
       lastReplySpeech: '',
       voiceActive: false,
+      voiceSessionEnded: false,
       lastVoiceText: '',
       lastVoiceTime: 0,
+      liveTalkerText: '',
+      liveTalkerTime: '',
       hybridConnected,
       sidecarPort,
       workspaceUris: sidecarEndpoint.workspaceUris || [],
@@ -672,8 +695,11 @@ function readSnapshot() {
     dialogueQuip: analysis.dialogueQuip,
     lastReplySpeech: cleanTextForSpeech(dialogue.modelText || ''),
     voiceActive: Boolean(voiceChat.voiceActive),
+    voiceSessionEnded: Boolean(voiceChat.voiceSessionEnded),
     lastVoiceText: voiceChat.lastVoiceText || '',
     lastVoiceTime: Number(voiceChat.lastVoiceTime) || 0,
+    liveTalkerText: dialogue.liveTalkerText || '',
+    liveTalkerTime: dialogue.liveTalkerTime || '',
     hybridConnected,
     sidecarPort,
     workspaceUris: sidecarEndpoint.workspaceUris || [],
@@ -720,7 +746,7 @@ function cleanTextForSpeech(raw) {
 function pushStateToRenderer() {
   if (!mainWin || mainWin.isDestroyed()) return;
   const snap = readSnapshot();
-  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.lastReplySpeech}|${snap.voiceActive}|${snap.lastVoiceText}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}`;
+  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.lastReplySpeech}|${snap.liveTalkerText}|${snap.liveTalkerTime}|${snap.voiceActive}|${snap.voiceSessionEnded}|${snap.lastVoiceText}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}`;
   if (key === lastStateKey) return;
   lastStateKey = key;
   mainWin.webContents.send('fairy:state', snap);
@@ -769,7 +795,7 @@ function startTelemetryWatcher() {
   pollTimer = setInterval(() => {
     tryWatch();
     pushStateToRenderer();
-  }, 1000);
+  }, 500);
 }
 
 function getStartupEnabled() {
@@ -1484,11 +1510,17 @@ async function enqueueFairySpeech(text) {
 }
 
 function getVoiceCandidate(snap) {
-  if (!snap || !snap.lastVoiceText) return { key: '', text: '' };
+  if (!snap) return { key: '', text: '' };
+  if (snap.liveTalkerText) {
+    const text = cleanTextForSpeech(snap.liveTalkerText);
+    if (!text) return { key: '', text: '' };
+    return { key: `live:${snap.conversationId}:${snap.liveTalkerTime}:${text.slice(0, 80)}`, text };
+  }
+  if (snap.voiceSessionEnded || !snap.lastVoiceText) return { key: '', text: '' };
   const text = cleanTextForSpeech(snap.lastVoiceText);
   if (!text) return { key: '', text: '' };
   const stamp = snap.lastVoiceTime || snap.updatedAt || '';
-  return { key: `${snap.conversationId}:${stamp}:${text.slice(0, 80)}`, text };
+  return { key: `vc:${snap.conversationId}:${stamp}:${text.slice(0, 80)}`, text };
 }
 
 function getStopCandidate(snap) {

@@ -29,7 +29,7 @@ if command -v brew >/dev/null 2>&1; then
   fi
 fi
 
-chmod +x install-mac.command Start-Fairy-Mac.command Stop-Fairy-Mac.command
+chmod +x install-mac.command Start-Fairy-Mac.command Stop-Fairy-Mac.command Setup-Siri-Mac.command scripts/setup-siri-mac.sh
 node scripts/sync-to-antigravity.mjs
 
 echo "-> Dang cai dat Electron cho macOS ($(uname -m))..."
@@ -64,6 +64,9 @@ else
   echo "Luu y: Neu muon bat giong may VieNeu-TTS cuc bo tren M1 Pro, hay cai 'brew install uv ffmpeg' roi chay lai install-mac.command."
 fi
 
+echo "-> Dang thiet lap launcher ~/Applications/Fairy.app & Phim tat Hey Siri..."
+/bin/bash scripts/setup-siri-mac.sh --no-open || true
+
 echo ""
-echo "Hoan tat! Tu nay ngai chi can click dup Start-Fairy-Mac.command de mo Fairy Desktop Overlay tren Apple Silicon."
+echo "Hoan tat! Tu nay ngai chi can click dup Start-Fairy-Mac.command hoac chay Setup-Siri-Mac.command de them \"Hey Siri, khoi dong Fairy\"."
 read -r -p "Nhan Enter de dong..."

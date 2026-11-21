@@ -16,7 +16,8 @@
     tts: 'fairy.desktop.tts',
     autoMute: 'fairy.desktop.autoMute',
   };
-  const DBL_ACTIONS = ['voice-mode', 'hybrid-chat', 'win-voice', 'focus-chat', 'toggle-bubble'];
+  const DBL_ACTIONS = ['voice-mode', 'hybrid-chat', 'instant-butler', 'win-voice', 'focus-chat', 'toggle-bubble'];
+  const FORCE_BOOT_PARAM = new URLSearchParams(window.location.search).get('boot') === '1';
   const HOLD_DRAG_MS = 220;
   const DBL_CLICK_MS = 300;
 
@@ -92,10 +93,20 @@
   let talkingActive = false;
   let voiceSyncActive = false;
   let talkingTimer = null;
-  let phase = prefs.autoBoot ? 'boot' : 'dock';
+  let phase = (FORCE_BOOT_PARAM || prefs.autoBoot) ? 'boot' : 'dock';
   let previewMood = '';
   let previewTimer = null;
   let lastInteractionAt = Date.now();
+  let autoBriefingDone = false;
+  let assistantMode = 'antigravity';
+  let butlerPrefs = {
+    dailyTokenBudget: 20000000,
+    autoBriefing: true,
+    electricityAlerts: true,
+    afkWatch: true,
+    clipboardWatch: false,
+    assistantMode: 'antigravity',
+  };
   let liveState = {
     conversationId: '',
     mood: 'idle',
@@ -110,6 +121,7 @@
     terminationReason: '',
     doneAt: 0,
     updatedAt: 0,
+    butler: null,
   };
 
   const layerEl = $('layer');
@@ -777,14 +789,17 @@
   function openBubble(mode = 'usage', customQuip = '', autoCloseMs = 0) {
     clearTimeout(turnBubbleTimer);
     bubbleEl.dataset.mode = mode;
+    bubbleEl.dataset.assistant = assistantMode;
     $('bubble-head').textContent =
       mode === 'turn'
         ? 'HOÀN TẤT LƯỢT XỬ LÝ'
-        : mode === 'hybrid'
-          ? 'FAIRY III // HYBRID CHAT'
-          : mode === 'toast'
-            ? 'FAIRY III // PHẢN HỒI'
-            : 'FAIRY III // GIÁM SÁT H.D.D';
+        : mode === 'toast'
+          ? 'FAIRY III // PHẢN HỒI'
+          : assistantMode === 'instant'
+            ? 'FAIRY III // TRỢ LÝ TỨC THÌ'
+            : mode === 'hybrid'
+              ? 'FAIRY III // HYBRID CHAT'
+              : 'FAIRY III // GIÁM SÁT H.D.D';
     if (customQuip) {
       $('b-quip').textContent = customQuip;
     } else if (liveState.dialogueQuip) {
@@ -811,10 +826,10 @@
 
   // ---------- Phase Switching (Boot -> Greet -> Dock) ----------
   const QUIPS = [
-    '— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác, thưa Master.',
+    '— Ting~ Mọi luồng H.D.D và Antigravity đang đồng bộ chuẩn xác ở 82 mili-giây, thưa Master.',
     'Hiệu năng của hệ thống này vẫn ở mức tối đa. Ngài cứ giao việc phức tạp lại đây.',
     'Tôi giải quyết phần nặng nhọc, Master chỉ cần duyệt kết quả — công bằng chứ?',
-    'Đang chờ chỉ thị tiếp theo của ngài. Chế độ treo cũng chỉ tốn chút điện năng thôi.',
+    'Đang chờ chỉ thị tiếp theo của ngài. Truyện kinh dị ngắn mang tên "Hóa đơn tiền điện tháng này" vẫn đang ghi sổ đấy nhé.',
   ];
   let quipIdx = 0;
 
@@ -886,6 +901,7 @@
         phase === 'dock' &&
         (Number(payload.chunkIndex) || 0) === 0 &&
         payload.text &&
+        !bubbleEl.dataset.richLock &&
         (bubbleEl.classList.contains('hidden') || bubbleEl.dataset.mode === 'toast' || bubbleEl.dataset.mode === 'turn')
       ) {
         openBubble('toast', `— ${payload.text}`, 10000);
@@ -978,6 +994,30 @@
     audio.play().catch(() => {});
   }
 
+  function scheduleAutoBriefing() {
+    if (autoBriefingDone || butlerPrefs.autoBriefing === false) return;
+    autoBriefingDone = true;
+    setTimeout(async () => {
+      if (phase !== 'dock' || !dockSettled || !window.fairyDesktop || !window.fairyDesktop.butlerAction) return;
+      if (greetAudio && !greetAudio.ended) {
+        setTimeout(() => {
+          window.fairyDesktop.butlerAction({ action: 'briefing-now', auto: true }).then((res) => {
+            if (res && res.ok && res.quip && bubbleEl.classList.contains('hidden')) {
+              openBubble('toast', res.quip, 11000);
+            }
+          }).catch(() => {});
+        }, 2500);
+        return;
+      }
+      try {
+        const res = await window.fairyDesktop.butlerAction({ action: 'briefing-now', auto: true });
+        if (res && res.ok && res.quip && bubbleEl.classList.contains('hidden')) {
+          openBubble('toast', res.quip, 11000);
+        }
+      } catch {}
+    }, 2400);
+  }
+
   function setPhase(nextPhase) {
     clearTimeout(bootFailsafe);
     clearTimeout(greetTimer);
@@ -1041,12 +1081,14 @@
             pendingSpeakQueue = [];
             for (const item of items) playLiveSpeakAudio(item);
           }
+          scheduleAutoBriefing();
         }, 1400);
       } else {
         dockSettled = true;
         layerEl.dataset.settled = '1';
         bootStageEl.classList.add('hidden');
         setIgnoreMouse(true);
+        scheduleAutoBriefing();
       }
     }
     syncWindowLayout();
@@ -1127,6 +1169,20 @@
     lastInteractionAt = Date.now();
     playStateTransition();
     const action = prefs.dblAction;
+    if (action === 'instant-butler') {
+      assistantMode = 'instant';
+      if (window.fairyDesktop && window.fairyDesktop.butlerAction) {
+        window.fairyDesktop.butlerAction({ action: 'set-assistant-mode', mode: 'instant' }).catch(() => {});
+      }
+      openBubble('hybrid', '— Trợ lý Tức thì H.D.D sẵn sàng. Gõ lệnh ("help", "đọc clipboard", "mở chatgpt", "pomodoro 25") hoặc bấm nút nhanh.');
+      setIgnoreMouse(false);
+      chatInputActive = true;
+      syncWindowFocusability();
+      setTimeout(() => {
+        if ($('b-chat-input')) $('b-chat-input').focus();
+      }, 40);
+      return;
+    }
     if (action === 'hybrid-chat') {
       openBubble('hybrid', liveState.dialogueQuip || '— Sẵn sàng chuyển tiếp chỉ thị thẳng vào phiên Antigravity, Master.');
       setIgnoreMouse(false);
@@ -1281,16 +1337,44 @@
     openSettings();
   });
 
+  function formatCompactTokens(num) {
+    const n = Math.max(0, Number(num) || 0);
+    if (n >= 1000000) return `${(n / 1000000).toFixed(n >= 10000000 ? 1 : 2).replace(/\.0+$/, '')}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(n >= 100000 ? 0 : 1).replace(/\.0$/, '')}K`;
+    return String(Math.round(n));
+  }
+
+  function formatSecMMSS(sec) {
+    const s = Math.max(0, Math.round(Number(sec) || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+  }
+
   // ---------- Bubble & Incoming State ----------
   let lastConvSig = '';
+  let lastNotesSig = '';
   function syncHybridControls() {
-    if ($('b-hybrid-badge')) {
-      const on = Boolean(liveState.hybridConnected);
-      $('b-hybrid-badge').dataset.on = on ? '1' : '0';
-      $('b-hybrid-badge').title = liveState.sidecarPort
-        ? `Plugin Link: cổng ${liveState.sidecarPort}`
-        : 'Đang chờ Antigravity Sidecar';
+    if ($('btn-mode-toggle')) {
+      const btn = $('btn-mode-toggle');
+      btn.dataset.mode = assistantMode;
+      btn.textContent = assistantMode === 'instant' ? 'TỨC THÌ' : 'AGY';
+      btn.title = assistantMode === 'instant'
+        ? 'Chế độ Trợ lý Tức thì (Toàn hệ thống). Bấm để về AGY'
+        : `Chế độ Antigravity (${liveState.sidecarPort ? `cổng ${liveState.sidecarPort}` : 'chờ sidecar'}). Bấm để sang TỨC THÌ`;
     }
+    if ($('b-chat-input')) {
+      $('b-chat-input').placeholder = assistantMode === 'instant'
+        ? 'Lệnh tức thì (help, đọc clipboard, mở chatgpt, pomodoro 25)...'
+        : 'Gửi lệnh / chat thẳng vào Antigravity...';
+    }
+    if ($('btn-b-mic')) {
+      $('btn-b-mic').textContent = assistantMode === 'instant' ? '📋' : '🔊';
+      $('btn-b-mic').title = assistantMode === 'instant'
+        ? 'Đọc ngay nội dung Clipboard bằng giọng Fairy'
+        : 'Bật Voice Mode (Đàm thoại trực tiếp)';
+    }
+
     const sel = $('b-conv-select');
     if (!sel || document.activeElement === sel) return;
     const list = Array.isArray(liveState.recentConversations) ? liveState.recentConversations : [];
@@ -1314,6 +1398,78 @@
     }
   }
 
+  function renderButlerUI() {
+    const b = liveState.butler || {};
+    const tu = b.tokenUsage || {};
+    const pomo = b.pomodoro || {};
+    const notes = Array.isArray(b.pinnedNotes) ? b.pinnedNotes : [];
+
+    bubbleEl.dataset.assistant = assistantMode;
+
+    if ($('b-power-val')) {
+      const used = formatCompactTokens(tu.todayUncached || 0);
+      const budget = formatCompactTokens(tu.budgetTokens || butlerPrefs.dailyTokenBudget || 20000000);
+      const pct = Number(tu.budgetPct) || 0;
+      const topLabel = Array.isArray(tu.topModels) && tu.topModels[0] ? ` · ${tu.topModels[0].label}` : '';
+      $('b-power-val').textContent = `${used} / ${budget} (${pct}%)${topLabel}`;
+    }
+    if ($('b-power-bar')) {
+      const pct = Math.min(100, Math.max(0, Number(tu.budgetPct) || 0));
+      $('b-power-bar').style.width = `${pct}%`;
+      $('b-power-bar').dataset.level = tu.powerStatus || 'nominal';
+    }
+
+    if ($('b-context-row') && $('b-context-key') && $('b-context-val')) {
+      if (pomo.active && pomo.remainingSec > 0) {
+        $('b-context-key').textContent = 'Pomodoro';
+        $('b-context-val').textContent = `⏱ ${formatSecMMSS(pomo.remainingSec)} · ${notes.length} ghi chú`;
+      } else if (assistantMode === 'instant' && b.activeApp) {
+        $('b-context-key').textContent = 'Đang nhìn';
+        $('b-context-val').textContent = b.activeApp.aiBrand || b.activeApp.appName || 'Desktop';
+      } else {
+        $('b-context-key').textContent = 'Bộ nhớ H.D.D';
+        $('b-context-val').textContent = `${notes.length} ghi chú · ${b.stats?.totalSessions || 1} phiên`;
+      }
+    }
+
+    if ($('btn-butler-watch')) {
+      $('btn-butler-watch').dataset.on = butlerPrefs.clipboardWatch ? '1' : '0';
+    }
+    if ($('btn-butler-pomo')) {
+      const activePomo = Boolean(pomo.active && pomo.remainingSec > 0);
+      $('btn-butler-pomo').dataset.on = activePomo ? '1' : '0';
+      $('btn-butler-pomo').textContent = activePomo ? `⏱ ${formatSecMMSS(pomo.remainingSec)}` : '⏱ 25p';
+    }
+
+    const notesBox = $('b-notes-box');
+    if (notesBox) {
+      const notesSig = notes.map((n) => `${n.id}:${n.text}`).join('|');
+      if (notesSig !== lastNotesSig) {
+        lastNotesSig = notesSig;
+        notesBox.innerHTML = '';
+        notesBox.classList.toggle('hidden', notes.length === 0);
+        for (const n of notes.slice(0, 5)) {
+          const chip = document.createElement('span');
+          chip.className = 'fz3-note-chip';
+          const lbl = document.createElement('span');
+          lbl.className = 'fz3-note-text';
+          lbl.textContent = `📌 ${n.text}`;
+          lbl.title = n.text;
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'fz3-note-del';
+          del.dataset.noteId = n.id;
+          del.title = 'Xóa ghi chú';
+          del.textContent = '✕';
+          chip.appendChild(lbl);
+          chip.appendChild(del);
+          notesBox.appendChild(chip);
+        }
+        if (!bubbleEl.classList.contains('hidden')) syncWindowLayout();
+      }
+    }
+  }
+
   function renderBubble() {
     const m = currentMood();
     $('b-status').innerHTML = `<b>${MOOD_LABELS[m] || m}${previewMood ? ' (Thử)' : ''}</b>`;
@@ -1322,6 +1478,7 @@
     $('b-counts').textContent = `${liveState.invocationCount || 0} lượt · ${liveState.toolCount || 0} tool`;
     if (!$('b-quip').textContent) $('b-quip').textContent = liveState.dialogueQuip || QUIPS[0];
     syncHybridControls();
+    renderButlerUI();
   }
 
   let doneStamp = '';
@@ -1329,6 +1486,11 @@
   function applyIncomingState(snap) {
     if (!snap || typeof snap !== 'object') return;
     liveState = snap;
+    if (snap.butler && snap.butler.preferences) {
+      butlerPrefs = { ...butlerPrefs, ...snap.butler.preferences };
+      assistantMode = butlerPrefs.assistantMode === 'instant' ? 'instant' : 'antigravity';
+      syncPrefsUI();
+    }
     if (snap.voiceActive) {
       lastInteractionAt = Date.now();
       if (!voiceSyncActive || !talkingActive) {
@@ -1348,7 +1510,7 @@
 
     if (snap.dialogueQuip && `${snap.mood}|${snap.emotionMood}|${snap.dialogueQuip}` !== dialogueStamp) {
       dialogueStamp = `${snap.mood}|${snap.emotionMood}|${snap.dialogueQuip}`;
-      $('b-quip').textContent = snap.dialogueQuip;
+      if (!bubbleEl.dataset.richLock) $('b-quip').textContent = snap.dialogueQuip;
     }
 
     if (phase === 'dock' && snap.mood === 'done') {
@@ -1356,6 +1518,7 @@
       if (stamp !== doneStamp) {
         doneStamp = stamp;
         const quip = snap.dialogueQuip || QUIPS[quipIdx++ % QUIPS.length];
+        delete bubbleEl.dataset.richLock;
         openBubble('turn', quip, 9000);
       }
     }
@@ -1375,6 +1538,9 @@
     if ($('sw-tts')) $('sw-tts').dataset.on = prefs.tts ? '1' : '0';
     if ($('sw-automute')) $('sw-automute').dataset.on = prefs.autoMute ? '1' : '0';
     if ($('sw-chrome')) $('sw-chrome').dataset.on = prefs.chrome ? '1' : '0';
+    if ($('sw-briefing')) $('sw-briefing').dataset.on = butlerPrefs.autoBriefing !== false ? '1' : '0';
+    if ($('sw-elec-alert')) $('sw-elec-alert').dataset.on = butlerPrefs.electricityAlerts !== false ? '1' : '0';
+    if ($('sw-clipwatch')) $('sw-clipwatch').dataset.on = butlerPrefs.clipboardWatch ? '1' : '0';
     $('rng-volume').value = String(prefs.volume);
     $('vol-label').textContent = `${prefs.volume}%`;
     document.querySelectorAll('[data-theme-pick]').forEach((b) => {
@@ -1385,6 +1551,9 @@
     });
     document.querySelectorAll('[data-dbl-pick]').forEach((b) => {
       b.dataset.on = b.dataset.dblPick === prefs.dblAction ? '1' : '0';
+    });
+    document.querySelectorAll('[data-budget-pick]').forEach((b) => {
+      b.dataset.on = Number(b.dataset.budgetPick) === Number(butlerPrefs.dailyTokenBudget || 20000000) ? '1' : '0';
     });
     document.querySelectorAll('[data-preview-mood]').forEach((b) => {
       b.dataset.active = previewMood === b.dataset.previewMood ? '1' : '0';
@@ -1415,6 +1584,36 @@
     syncWindowLayout();
   }
 
+  function presentButlerResult(res, { openToastIfClosed = false, durationMs = 10000 } = {}) {
+    if (!res) return;
+    if (res.mood) layerEl.dataset.mood = res.mood;
+    if (res.quip) {
+      if (res.kind && ['briefing', 'power-report', 'git', 'memory', 'help'].includes(res.kind)) {
+        bubbleEl.dataset.richLock = '1';
+      } else {
+        delete bubbleEl.dataset.richLock;
+      }
+      $('b-quip').textContent = res.quip;
+      if (bubbleEl.classList.contains('hidden')) {
+        if (openToastIfClosed) openBubble('toast', res.quip, durationMs);
+      } else {
+        syncWindowLayout();
+      }
+    }
+    playStateTransition();
+  }
+
+  async function runButlerUiAction(req, opts = {}) {
+    if (!window.fairyDesktop || !window.fairyDesktop.butlerAction) return null;
+    try {
+      const res = await window.fairyDesktop.butlerAction(req);
+      presentButlerResult(res, opts);
+      return res;
+    } catch {
+      return null;
+    }
+  }
+
   if ($('b-chat-input')) {
     $('b-chat-input').addEventListener('pointerdown', () => {
       chatInputActive = true;
@@ -1423,12 +1622,41 @@
     });
   }
 
-  $('btn-close-bubble').addEventListener('click', closeBubble);
+  $('btn-close-bubble').addEventListener('click', () => {
+    delete bubbleEl.dataset.richLock;
+    closeBubble();
+  });
   if ($('btn-expand-bubble')) {
     $('btn-expand-bubble').addEventListener('click', () => {
+      delete bubbleEl.dataset.richLock;
       const cur = bubbleEl.dataset.mode;
       const next = cur === 'toast' ? 'hybrid' : cur === 'hybrid' ? 'usage' : 'hybrid';
       openBubble(next);
+    });
+  }
+
+  if ($('btn-mode-toggle')) {
+    $('btn-mode-toggle').addEventListener('click', async () => {
+      const nextMode = assistantMode === 'instant' ? 'antigravity' : 'instant';
+      assistantMode = nextMode;
+      delete bubbleEl.dataset.richLock;
+      await runButlerUiAction({ action: 'set-assistant-mode', mode: nextMode });
+      openBubble(
+        bubbleEl.dataset.mode === 'usage' ? 'usage' : 'hybrid',
+        nextMode === 'instant'
+          ? '— Đã chuyển sang Trợ lý Tức thì (Trình duyệt / Clipboard / Lệnh nhanh). Gõ "help" để xem lệnh.'
+          : '— Đã nối lại cầu Antigravity Hybrid.'
+      );
+      syncWindowFocusability();
+    });
+  }
+
+  if ($('b-notes-box')) {
+    $('b-notes-box').addEventListener('click', async (e) => {
+      const delBtn = e.target.closest('[data-note-id]');
+      if (!delBtn) return;
+      const noteId = delBtn.dataset.noteId;
+      if (noteId) await runButlerUiAction({ action: 'memory-remove-note', id: noteId });
     });
   }
 
@@ -1438,7 +1666,29 @@
       const input = $('b-chat-input');
       const sendBtn = $('b-chat-send');
       const message = input ? input.value.trim() : '';
-      if (!message || !window.fairyDesktop || !window.fairyDesktop.hybridAction) return;
+      if (!message || !window.fairyDesktop) return;
+
+      if (assistantMode === 'instant' || message.startsWith('/')) {
+        input.disabled = true;
+        if (sendBtn) sendBtn.disabled = true;
+        try {
+          await runButlerUiAction({
+            action: 'run-command-text',
+            text: message,
+            conversationId: ($('b-conv-select') && $('b-conv-select').value) || liveState.conversationId || '',
+            speak: true,
+          });
+          input.value = '';
+        } finally {
+          input.disabled = false;
+          if (sendBtn) sendBtn.disabled = false;
+          input.focus();
+        }
+        return;
+      }
+
+      if (!window.fairyDesktop.hybridAction) return;
+      delete bubbleEl.dataset.richLock;
       input.disabled = true;
       if (sendBtn) sendBtn.disabled = true;
       const prevMood = activeDisplayMood;
@@ -1455,6 +1705,7 @@
         $('b-quip').textContent = res && res.executedDirect
           ? '— Ting~ Đã gửi thẳng vào phiên Antigravity qua Plugin API.'
           : '— Đã chuyển lệnh qua Plugin Bridge. Nếu khung Fairy H.D.D chưa tải bản mới, ngài đóng/mở lại 1 lần.';
+        syncWindowLayout();
       } catch {
         layerEl.dataset.mood = prevMood;
         $('b-quip').textContent = 'Không thể gửi qua Hybrid Bridge.';
@@ -1468,6 +1719,10 @@
 
   if ($('btn-b-mic')) {
     $('btn-b-mic').addEventListener('click', async () => {
+      if (assistantMode === 'instant') {
+        await runButlerUiAction({ action: 'read-clipboard' });
+        return;
+      }
       if (!window.fairyDesktop || !window.fairyDesktop.triggerVoice) return;
       const nextTalk = !talkingActive;
       setTalkingState(nextTalk);
@@ -1482,6 +1737,18 @@
       }
     });
   }
+
+  if ($('btn-butler-brief')) $('btn-butler-brief').addEventListener('click', () => runButlerUiAction({ action: 'briefing-now', speak: true }));
+  if ($('btn-butler-clip')) $('btn-butler-clip').addEventListener('click', () => runButlerUiAction({ action: 'read-clipboard' }));
+  if ($('btn-butler-watch')) $('btn-butler-watch').addEventListener('click', () => runButlerUiAction({ action: 'toggle-clipboard-watch' }));
+  if ($('btn-butler-pomo')) {
+    $('btn-butler-pomo').addEventListener('click', () => {
+      const running = Boolean(liveState.butler?.pomodoro?.active && liveState.butler?.pomodoro?.remainingSec > 0);
+      runButlerUiAction({ action: running ? 'pomodoro-stop' : 'pomodoro-start', minutes: 25 });
+    });
+  }
+  if ($('btn-butler-folder')) $('btn-butler-folder').addEventListener('click', () => runButlerUiAction({ action: 'open-workspace' }));
+  if ($('btn-butler-git')) $('btn-butler-git').addEventListener('click', () => runButlerUiAction({ action: 'git-status' }));
 
   if ($('b-conv-select')) {
     $('b-conv-select').addEventListener('change', async () => {
@@ -1575,6 +1842,47 @@
       syncPrefsUI();
     });
   }
+  if ($('sw-briefing')) {
+    $('sw-briefing').addEventListener('click', async () => {
+      const next = butlerPrefs.autoBriefing === false;
+      butlerPrefs.autoBriefing = next;
+      syncPrefsUI();
+      if (window.fairyDesktop && window.fairyDesktop.setButlerPrefs) {
+        await window.fairyDesktop.setButlerPrefs({ autoBriefing: next }).catch(() => {});
+      }
+    });
+  }
+  if ($('sw-elec-alert')) {
+    $('sw-elec-alert').addEventListener('click', async () => {
+      const next = butlerPrefs.electricityAlerts === false;
+      butlerPrefs.electricityAlerts = next;
+      syncPrefsUI();
+      if (window.fairyDesktop && window.fairyDesktop.setButlerPrefs) {
+        await window.fairyDesktop.setButlerPrefs({ electricityAlerts: next }).catch(() => {});
+      }
+    });
+  }
+  if ($('sw-clipwatch')) {
+    $('sw-clipwatch').addEventListener('click', async () => {
+      const next = !butlerPrefs.clipboardWatch;
+      butlerPrefs.clipboardWatch = next;
+      syncPrefsUI();
+      if (window.fairyDesktop && window.fairyDesktop.setButlerPrefs) {
+        await window.fairyDesktop.setButlerPrefs({ clipboardWatch: next }).catch(() => {});
+      }
+    });
+  }
+  document.querySelectorAll('[data-budget-pick]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const val = Number(btn.dataset.budgetPick);
+      if (!val) return;
+      butlerPrefs.dailyTokenBudget = val;
+      syncPrefsUI();
+      if (window.fairyDesktop && window.fairyDesktop.setButlerPrefs) {
+        await window.fairyDesktop.setButlerPrefs({ dailyTokenBudget: val }).catch(() => {});
+      }
+    });
+  });
   if ($('sw-chrome')) {
     $('sw-chrome').addEventListener('click', () => {
       prefs.chrome = !prefs.chrome;
@@ -1664,6 +1972,12 @@
     if (window.fairyDesktop.setAutoMute) {
       window.fairyDesktop.setAutoMute(prefs.autoMute);
     }
+    if (window.fairyDesktop.onButlerEvent) {
+      window.fairyDesktop.onButlerEvent((evt) => {
+        if (!evt) return;
+        presentButlerResult(evt, { openToastIfClosed: true, durationMs: 11000 });
+      });
+    }
     window.fairyDesktop.onCommand((cmd) => {
       if (cmd === 'replay-boot') setPhase('boot');
       else if (cmd === 'replay-greet') setPhase('greet');
@@ -1683,6 +1997,18 @@
         if (phase !== 'dock') setPhase('dock');
         if (bubbleEl.classList.contains('hidden')) openBubble('usage');
         else closeBubble();
+      } else if (cmd === 'open-instant') {
+        if (phase !== 'dock') setPhase('dock');
+        assistantMode = 'instant';
+        runButlerUiAction({ action: 'set-assistant-mode', mode: 'instant' });
+        openBubble('hybrid', '— Trợ lý Tức thì H.D.D sẵn sàng. Gõ lệnh ("help", "đọc clipboard", "mở chatgpt") hoặc bấm nút nhanh.');
+        setIgnoreMouse(false);
+        chatInputActive = true;
+        syncWindowFocusability();
+        setTimeout(() => { if ($('b-chat-input')) $('b-chat-input').focus(); }, 40);
+      } else if (cmd === 'briefing-now') {
+        if (phase !== 'dock') setPhase('dock');
+        runButlerUiAction({ action: 'briefing-now', speak: true }, { openToastIfClosed: true, durationMs: 12000 });
       }
     });
     window.fairyDesktop.getState().then(applyIncomingState).catch(() => {});

@@ -8,10 +8,12 @@ const {
   BrowserWindow,
   Menu,
   Tray,
+  clipboard,
   globalShortcut,
   ipcMain,
   nativeImage,
   screen,
+  shell,
 } = require('electron');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const {
@@ -31,8 +33,16 @@ const {
 const { createServer, request: httpRequest } = require('node:http');
 const { homedir } = require('node:os');
 const { dirname, extname, join } = require('node:path');
+const {
+  classifyForegroundApp,
+  createButlerCore,
+  formatCompactTokens,
+  parseButlerCommand,
+  pickQuip,
+} = require('./butler-core.cjs');
 
 const IS_SMOKE_TEST = process.env.FAIRY_SMOKE_TEST === '1';
+const FORCE_BOOT = process.argv.includes('--force-boot') || process.env.FAIRY_FORCE_BOOT === '1';
 const IS_MAC = process.platform === 'darwin';
 const IS_WIN = process.platform === 'win32';
 const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
@@ -42,6 +52,11 @@ if (!IS_SMOKE_TEST) {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
     app.quit();
+  }
+  try {
+    app.setAsDefaultProtocolClient('fairy');
+  } catch {
+    // Ignore protocol registration errors in portable environments.
   }
 }
 
@@ -126,6 +141,47 @@ let uiaPollTimer = null;
 let uiaPollInFlight = false;
 let uiaCommittedText = '';
 let uiaSubSeq = 0;
+
+const butler = createButlerCore({ appDataDir: APP_DATA_DIR, brainDir: BRAIN_DIR });
+let cachedTokenUsage = null;
+let lastTokenScanAt = 0;
+let currentActiveApp = null;
+let lastObservedAppAt = 0;
+let lastAiWebTipAt = 0;
+let lastUserActivityAt = Date.now();
+let pomodoroState = { active: false, startedAt: 0, endsAt: 0, remainingSec: 0, durationMin: 25 };
+let pomodoroTimer = null;
+let activeAppTimer = null;
+let alertTimer = null;
+let clipboardTimer = null;
+let lastSeenClipboardText = '';
+let pendingControlCmd = '';
+
+function findProtocolArg(argv) {
+  if (!Array.isArray(argv)) return '';
+  return argv.find((a) => typeof a === 'string' && /^fairy:\/\//i.test(a.trim())) || '';
+}
+
+function protocolUrlToControlCmd(rawUrl) {
+  try {
+    const u = new URL(String(rawUrl || '').trim());
+    const route = `${u.hostname || ''}${u.pathname || ''}`.replace(/^\/+|\/+$/g, '').toLowerCase();
+    if (!route || route === 'boot' || route === 'start') return 'replay-boot';
+    if (route === 'greet') return 'replay-greet';
+    if (route === 'briefing' || route === 'report') return 'briefing-now';
+    if (route === 'instant' || route === 'butler') return 'open-instant';
+    if (route === 'toggle' || route === 'bubble') return 'toggle-bubble';
+    if (route === 'read-clipboard' || route === 'clipboard') return 'read-clipboard';
+    if (route === 'settings') return 'open-settings';
+  } catch {}
+  return '';
+}
+
+if (FORCE_BOOT || protocolUrlToControlCmd(findProtocolArg(process.argv)) === 'replay-boot') {
+  pendingControlCmd = 'replay-boot';
+} else {
+  pendingControlCmd = protocolUrlToControlCmd(findProtocolArg(process.argv));
+}
 
 function serveMediaWithRange(req, res, filePath, contentType) {
   let stat;
@@ -257,6 +313,90 @@ function handleHookPushRequest(req, res) {
   });
 }
 
+function dispatchControlCommand(cmd) {
+  const clean = String(cmd || '').trim();
+  if (!clean || clean === 'ping') {
+    return { ok: true, pong: true, pid: process.pid };
+  }
+  if (!mainWin || mainWin.isDestroyed()) {
+    pendingControlCmd = clean;
+    return { ok: true, queued: true };
+  }
+  if (clean === 'read-clipboard') {
+    executeButlerAction({ action: 'read-clipboard' }).then((res) => {
+      if (res && res.ok && mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('fairy:butler-event', res);
+      }
+    }).catch(() => {});
+    return { ok: true, executed: 'read-clipboard' };
+  }
+  const allowedUiCmds = new Set([
+    'replay-boot',
+    'replay-greet',
+    'toggle-bubble',
+    'open-instant',
+    'open-settings',
+    'briefing-now',
+    'reset-pos',
+    'toggle-eye',
+  ]);
+  if (!allowedUiCmds.has(clean)) {
+    return { ok: false, error: 'unknown_cmd' };
+  }
+  showOverlayWindow(mainWin, false);
+  mainWin.webContents.send('fairy:cmd', clean);
+  return { ok: true, dispatched: clean };
+}
+
+function handleFairyProtocolUrl(rawUrl) {
+  const cmd = protocolUrlToControlCmd(rawUrl);
+  if (!cmd) return { ok: false, error: 'unknown_protocol_route' };
+  return dispatchControlCommand(cmd);
+}
+
+function handleLocalCmdRequest(req, res) {
+  const chunks = [];
+  let totalBytes = 0;
+  let finished = false;
+  req.on('data', (chunk) => {
+    if (finished) return;
+    totalBytes += chunk.length;
+    if (totalBytes > 8192) {
+      finished = true;
+      res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.end('{"ok":false,"error":"payload_too_large"}');
+      try { req.destroy(); } catch {}
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on('end', () => {
+    if (finished) return;
+    finished = true;
+    try {
+      const body = Buffer.concat(chunks).toString('utf-8');
+      const parsed = JSON.parse(body || '{}');
+      const result = parsed?.url
+        ? handleFairyProtocolUrl(parsed.url)
+        : dispatchControlCommand(parsed?.cmd);
+      res.writeHead(result.ok ? 200 : 400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end('{"ok":false,"error":"invalid_json"}');
+    }
+  });
+  req.on('error', () => {
+    if (!finished) {
+      finished = true;
+      try {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end('{"ok":false}');
+      } catch {}
+    }
+  });
+}
+
 function startLocalMediaServer() {
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
@@ -265,6 +405,10 @@ function startLocalMediaServer() {
 
       if (req.method === 'POST' && reqPath === '/api/hook-push') {
         handleHookPushRequest(req, res);
+        return;
+      }
+      if (req.method === 'POST' && reqPath === '/api/cmd') {
+        handleLocalCmdRequest(req, res);
         return;
       }
 
@@ -889,183 +1033,228 @@ function discoverSidecarPort() {
   return discoverSidecarEndpoint().port;
 }
 
-function readSnapshot() {
-  const now = Date.now();
-  let diskEntry = null;
-  let store = { conversations: {} };
+  const learnedPathSet = new Set();
+  const maybeLearnWorkspace = (raw) => {
+    const k = String(raw || '').trim();
+    if (!k || learnedPathSet.has(k)) return;
+    learnedPathSet.add(k);
+    if (butler.learnWorkspace(k)) butler.saveMemory();
+  };
 
-  try {
-    if (existsSync(STATE_FILE)) {
-      store = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
-      const conversations = store?.conversations || {};
-      const preferred = store?.latestConversationId && conversations[store.latestConversationId]
-        ? conversations[store.latestConversationId]
-        : Object.values(conversations).sort((a, b) => (Number(b?.updatedAt) || 0) - (Number(a?.updatedAt) || 0))[0];
-      if (preferred) {
-        diskEntry = { ...preferred, source: 'hook' };
+  function getCachedTokenUsage(activeConvId = '', force = false) {
+    const now = Date.now();
+    if (force || !cachedTokenUsage || now - lastTokenScanAt >= 5000) {
+      lastTokenScanAt = now;
+      cachedTokenUsage = butler.scanAntigravityTokenUsage(activeConvId, now);
+    }
+    return cachedTokenUsage;
+  }
+
+  function buildButlerSnapshotField(activeConvId = '', forceTokenRefresh = false) {
+    const tokenUsage = getCachedTokenUsage(activeConvId, forceTokenRefresh);
+    const mem = butler.loadMemory();
+    return {
+      memoryFile: butler.memoryFile,
+      tokenUsage,
+      preferences: { ...mem.preferences },
+      stats: { ...mem.stats },
+      pinnedNotes: [...(mem.pinnedNotes || [])],
+      knownWorkspaces: [...(mem.knownWorkspaces || [])],
+      activeApp: currentActiveApp,
+      pomodoro: { ...pomodoroState },
+    };
+  }
+
+  function readSnapshot() {
+    const now = Date.now();
+    let diskEntry = null;
+    let store = { conversations: {} };
+
+    try {
+      if (existsSync(STATE_FILE)) {
+        store = JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+        const conversations = store?.conversations || {};
+        const preferred = store?.latestConversationId && conversations[store.latestConversationId]
+          ? conversations[store.latestConversationId]
+          : Object.values(conversations).sort((a, b) => (Number(b?.updatedAt) || 0) - (Number(a?.updatedAt) || 0))[0];
+        if (preferred) {
+          diskEntry = { ...preferred, source: 'hook' };
+        }
+      }
+    } catch {
+      // Ignore transient file read error.
+    }
+
+    let entry = diskEntry;
+    if (latestHookEntry && latestHookEntry.conversationId) {
+      const ipcConv = latestHookEntry.conversationId;
+      const diskForIpc = store?.conversations?.[ipcConv];
+      const ipcTime = Number(latestHookEntry.updatedAt) || 0;
+      const diskTime = Number(diskForIpc?.updatedAt || diskEntry?.updatedAt) || 0;
+      if (!diskEntry || ipcTime >= diskTime) {
+        entry = {
+          ...(diskForIpc || {}),
+          ...latestHookEntry,
+          source: 'hook-ipc',
+        };
       }
     }
-  } catch {
-    // Ignore transient file read error.
-  }
 
-  let entry = diskEntry;
-  if (latestHookEntry && latestHookEntry.conversationId) {
-    const ipcConv = latestHookEntry.conversationId;
-    const diskForIpc = store?.conversations?.[ipcConv];
-    const ipcTime = Number(latestHookEntry.updatedAt) || 0;
-    const diskTime = Number(diskForIpc?.updatedAt || diskEntry?.updatedAt) || 0;
-    if (!diskEntry || ipcTime >= diskTime) {
-      entry = {
-        ...(diskForIpc || {}),
-        ...latestHookEntry,
-        source: 'hook-ipc',
+    const recentConversations = Object.values(store?.conversations || {})
+      .filter((c) => c && c.conversationId)
+      .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+      .slice(0, 8)
+      .map((c) => ({
+        id: String(c.conversationId),
+        preview: String(c.lastPromptPreview || c.lastTool || c.conversationId).replace(/\s+/g, ' ').trim().slice(0, 48),
+        mood: computeEffectiveMood(c, now),
+        modelName: String(c.modelName || ''),
+        updatedAt: Number(c.updatedAt) || 0,
+        toolCount: Number(c.toolCount) || 0,
+      }));
+
+    const sidecarEndpoint = discoverSidecarEndpoint();
+    const sidecarPort = sidecarEndpoint.port || 0;
+    const hybridConnected = Boolean(sidecarPort > 0 || existsSync(STATE_FILE));
+    if (Array.isArray(sidecarEndpoint.workspaceUris)) {
+      sidecarEndpoint.workspaceUris.forEach(maybeLearnWorkspace);
+    }
+
+    if (!entry) {
+      entry = readLatestTranscriptFallback();
+    }
+
+    const uiaOpen = Boolean(liveUiaSubtitle?.voiceOpen && now - (Number(liveUiaSubtitle?.lastSeenAt) || 0) < 5000);
+    const uiaFreshText =
+      liveUiaSubtitle && liveUiaSubtitle.text && now - (Number(liveUiaSubtitle.updatedAt) || 0) < 20000
+        ? liveUiaSubtitle
+        : null;
+
+    if (!entry) {
+      return {
+        conversationId: uiaFreshText ? 'live-uia' : '',
+        mood: uiaOpen ? 'comforting' : 'idle',
+        emotionMood: uiaOpen ? 'comforting' : 'idle',
+        dialogueQuip: uiaFreshText?.text ? `🎙️ ${uiaFreshText.text}` : '',
+        lastReplySpeech: '',
+        voiceActive: uiaOpen,
+        voiceSessionEnded: false,
+        lastVoiceText: '',
+        lastVoiceTime: 0,
+        liveTalkerText: uiaFreshText?.text || '',
+        liveTalkerTime: uiaFreshText ? `uia:${uiaFreshText.seq}` : '',
+        liveTalkerComplete: Boolean(uiaFreshText?.complete),
+        hybridConnected,
+        sidecarPort,
+        workspaceUris: sidecarEndpoint.workspaceUris || [],
+        recentConversations,
+        butler: buildButlerSnapshotField('', false),
+        lastPromptPreview: '',
+        lastEvent: '',
+        modelName: '',
+        invocationCount: 0,
+        toolCount: 0,
+        lastTool: '',
+        lastToolError: '',
+        terminationReason: '',
+        sessionStartedAt: 0,
+        updatedAt: uiaFreshText?.updatedAt || 0,
+        source: uiaFreshText ? 'uia-live' : 'none',
+        serverTime: now,
       };
     }
-  }
 
-  const recentConversations = Object.values(store?.conversations || {})
-    .filter((c) => c && c.conversationId)
-    .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
-    .slice(0, 8)
-    .map((c) => ({
-      id: String(c.conversationId),
-      preview: String(c.lastPromptPreview || c.lastTool || c.conversationId).replace(/\s+/g, ' ').trim().slice(0, 48),
-      mood: computeEffectiveMood(c, now),
-      modelName: String(c.modelName || ''),
-      updatedAt: Number(c.updatedAt) || 0,
-      toolCount: Number(c.toolCount) || 0,
-    }));
+    if (entry.cwd) maybeLearnWorkspace(entry.cwd);
+    if (entry.mood === 'thinking' || entry.mood === 'working' || entry.lastEvent === 'Stop') {
+      lastUserActivityAt = Math.max(lastUserActivityAt, Number(entry.updatedAt) || now);
+    }
 
-  const sidecarEndpoint = discoverSidecarEndpoint();
-  const sidecarPort = sidecarEndpoint.port || 0;
-  const hybridConnected = Boolean(sidecarPort > 0 || existsSync(STATE_FILE));
+    const dialogue = extractRecentDialogueFromTranscript(entry.transcriptPath, entry.conversationId);
+    const voiceChat = readLatestVoiceChatState(entry.conversationId, now);
+    if (uiaOpen) {
+      voiceChat.voiceActive = true;
+      voiceChat.voiceSessionEnded = false;
+    }
 
-  if (!entry) {
-    entry = readLatestTranscriptFallback();
-  }
+    const hookLiveTime = Number(entry.liveTalkerUpdatedAt) || 0;
+    const hookLiveText = String(entry.liveTalkerText || '').trim();
+    const useUia = Boolean(uiaFreshText && (!hookLiveText || uiaFreshText.updatedAt >= hookLiveTime));
+    const useHookLive = Boolean(!useUia && hookLiveText && (!dialogue.liveTalkerText || hookLiveTime >= (dialogue.mtimeMs || 0) - 2000));
 
-  const uiaOpen = Boolean(liveUiaSubtitle?.voiceOpen && now - (Number(liveUiaSubtitle?.lastSeenAt) || 0) < 5000);
-  const uiaFreshText =
-    liveUiaSubtitle && liveUiaSubtitle.text && now - (Number(liveUiaSubtitle.updatedAt) || 0) < 20000
-      ? liveUiaSubtitle
-      : null;
+    const liveTalkerText = useUia
+      ? uiaFreshText.text
+      : useHookLive
+        ? hookLiveText
+        : (dialogue.liveTalkerText || '');
+    const liveTalkerTime = useUia
+      ? `uia:${uiaFreshText.seq}`
+      : useHookLive
+        ? (entry.liveTalkerTime || String(hookLiveTime))
+        : (dialogue.liveTalkerTime || '');
+    const liveTalkerComplete = useUia
+      ? Boolean(uiaFreshText.complete)
+      : useHookLive
+        ? Boolean(entry.liveTalkerComplete)
+        : Boolean(dialogue.liveTalkerComplete);
 
-  if (!entry) {
+    const effectiveUserText = dialogue.userText || entry.lastPromptPreview || '';
+    if (Array.isArray(entry.recentUserTexts)) {
+      registerKnownUserSpeech(entry.recentUserTexts);
+    }
+    if (effectiveUserText) {
+      registerKnownUserSpeech(effectiveUserText);
+    }
+    const hookAssistantText =
+      entry.lastAssistantText && Number(entry.lastAssistantUpdatedAt || 0) >= (dialogue.mtimeMs || 0) - 2000
+        ? String(entry.lastAssistantText)
+        : '';
+    const effectiveModelRaw = dialogue.modelRawText || dialogue.modelText || hookAssistantText || '';
+
+    const analysis = analyzeDialogueContext({
+      entry,
+      userText: effectiveUserText,
+      modelText: dialogue.modelText || hookAssistantText,
+      voiceChat: uiaFreshText ? { ...voiceChat, lastVoiceText: uiaFreshText.text || voiceChat.lastVoiceText } : voiceChat,
+      hasStepError: dialogue.hasStepError,
+      now,
+    });
+
+    const forceTokenRefresh = entry.lastEvent === 'Stop' && now - (Number(entry.doneAt) || 0) < 1200;
+
     return {
-      conversationId: uiaFreshText ? 'live-uia' : '',
-      mood: uiaOpen ? 'comforting' : 'idle',
-      emotionMood: uiaOpen ? 'comforting' : 'idle',
-      dialogueQuip: uiaFreshText?.text ? `🎙️ ${uiaFreshText.text}` : '',
-      lastReplySpeech: '',
-      voiceActive: uiaOpen,
-      voiceSessionEnded: false,
-      lastVoiceText: '',
-      lastVoiceTime: 0,
-      liveTalkerText: uiaFreshText?.text || '',
-      liveTalkerTime: uiaFreshText ? `uia:${uiaFreshText.seq}` : '',
-      liveTalkerComplete: Boolean(uiaFreshText?.complete),
+      conversationId: entry.conversationId || '',
+      mood: analysis.mood,
+      emotionMood: analysis.emotionMood,
+      dialogueQuip: analysis.dialogueQuip,
+      lastReplySpeech: buildSpeechSummaryFromModel(effectiveModelRaw),
+      voiceActive: Boolean(voiceChat.voiceActive || uiaOpen),
+      voiceSessionEnded: Boolean(voiceChat.voiceSessionEnded && !uiaOpen),
+      lastVoiceText: voiceChat.lastVoiceText || '',
+      lastVoiceTime: Number(voiceChat.lastVoiceTime) || 0,
+      liveTalkerText,
+      liveTalkerTime,
+      liveTalkerComplete,
       hybridConnected,
       sidecarPort,
       workspaceUris: sidecarEndpoint.workspaceUris || [],
       recentConversations,
-      lastPromptPreview: '',
-      lastEvent: '',
-      modelName: '',
-      invocationCount: 0,
-      toolCount: 0,
-      lastTool: '',
-      lastToolError: '',
-      terminationReason: '',
-      sessionStartedAt: 0,
-      updatedAt: uiaFreshText?.updatedAt || 0,
-      source: uiaFreshText ? 'uia-live' : 'none',
+      butler: buildButlerSnapshotField(entry.conversationId || '', forceTokenRefresh),
+      cwd: entry.cwd || '',
+      lastPromptPreview: effectiveUserText,
+      lastEvent: entry.lastEvent || '',
+      modelName: entry.modelName || '',
+      invocationCount: Number(entry.invocationCount) || 0,
+      toolCount: Number(entry.toolCount) || 0,
+      lastTool: entry.lastTool || '',
+      lastToolError: entry.lastToolError || '',
+      terminationReason: entry.terminationReason || '',
+      sessionStartedAt: Number(entry.sessionStartedAt) || 0,
+      doneAt: Number(entry.doneAt) || 0,
+      updatedAt: Number(entry.updatedAt) || 0,
+      source: entry.source || 'hook',
       serverTime: now,
     };
   }
-
-  const dialogue = extractRecentDialogueFromTranscript(entry.transcriptPath, entry.conversationId);
-  const voiceChat = readLatestVoiceChatState(entry.conversationId, now);
-  if (uiaOpen) {
-    voiceChat.voiceActive = true;
-    voiceChat.voiceSessionEnded = false;
-  }
-
-  const hookLiveTime = Number(entry.liveTalkerUpdatedAt) || 0;
-  const hookLiveText = String(entry.liveTalkerText || '').trim();
-  const useUia = Boolean(uiaFreshText && (!hookLiveText || uiaFreshText.updatedAt >= hookLiveTime));
-  const useHookLive = Boolean(!useUia && hookLiveText && (!dialogue.liveTalkerText || hookLiveTime >= (dialogue.mtimeMs || 0) - 2000));
-
-  const liveTalkerText = useUia
-    ? uiaFreshText.text
-    : useHookLive
-      ? hookLiveText
-      : (dialogue.liveTalkerText || '');
-  const liveTalkerTime = useUia
-    ? `uia:${uiaFreshText.seq}`
-    : useHookLive
-      ? (entry.liveTalkerTime || String(hookLiveTime))
-      : (dialogue.liveTalkerTime || '');
-  const liveTalkerComplete = useUia
-    ? Boolean(uiaFreshText.complete)
-    : useHookLive
-      ? Boolean(entry.liveTalkerComplete)
-      : Boolean(dialogue.liveTalkerComplete);
-
-  const effectiveUserText = dialogue.userText || entry.lastPromptPreview || '';
-  if (Array.isArray(entry.recentUserTexts)) {
-    registerKnownUserSpeech(entry.recentUserTexts);
-  }
-  if (effectiveUserText) {
-    registerKnownUserSpeech(effectiveUserText);
-  }
-  const hookAssistantText =
-    entry.lastAssistantText && Number(entry.lastAssistantUpdatedAt || 0) >= (dialogue.mtimeMs || 0) - 2000
-      ? String(entry.lastAssistantText)
-      : '';
-  const effectiveModelRaw = dialogue.modelRawText || dialogue.modelText || hookAssistantText || '';
-
-  const analysis = analyzeDialogueContext({
-    entry,
-    userText: effectiveUserText,
-    modelText: dialogue.modelText || hookAssistantText,
-    voiceChat: uiaFreshText ? { ...voiceChat, lastVoiceText: uiaFreshText.text || voiceChat.lastVoiceText } : voiceChat,
-    hasStepError: dialogue.hasStepError,
-    now,
-  });
-
-  return {
-    conversationId: entry.conversationId || '',
-    mood: analysis.mood,
-    emotionMood: analysis.emotionMood,
-    dialogueQuip: analysis.dialogueQuip,
-    lastReplySpeech: buildSpeechSummaryFromModel(effectiveModelRaw),
-    voiceActive: Boolean(voiceChat.voiceActive || uiaOpen),
-    voiceSessionEnded: Boolean(voiceChat.voiceSessionEnded && !uiaOpen),
-    lastVoiceText: voiceChat.lastVoiceText || '',
-    lastVoiceTime: Number(voiceChat.lastVoiceTime) || 0,
-    liveTalkerText,
-    liveTalkerTime,
-    liveTalkerComplete,
-    hybridConnected,
-    sidecarPort,
-    workspaceUris: sidecarEndpoint.workspaceUris || [],
-    recentConversations,
-    lastPromptPreview: effectiveUserText,
-    lastEvent: entry.lastEvent || '',
-    modelName: entry.modelName || '',
-    invocationCount: Number(entry.invocationCount) || 0,
-    toolCount: Number(entry.toolCount) || 0,
-    lastTool: entry.lastTool || '',
-    lastToolError: entry.lastToolError || '',
-    terminationReason: entry.terminationReason || '',
-    sessionStartedAt: Number(entry.sessionStartedAt) || 0,
-    doneAt: Number(entry.doneAt) || 0,
-    updatedAt: Number(entry.updatedAt) || 0,
-    source: entry.source || 'hook',
-    serverTime: now,
-  };
-}
 
 function buildSpeechSummaryFromModel(raw) {
   const txt = String(raw || '').replace(/```[\s\S]*?```/g, ' ').trim();
@@ -1130,7 +1319,10 @@ function cleanTextForSpeech(raw) {
 function pushStateToRenderer() {
   if (!mainWin || mainWin.isDestroyed()) return;
   const snap = readSnapshot();
-  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.lastReplySpeech}|${snap.liveTalkerText}|${snap.liveTalkerTime}|${snap.voiceActive}|${snap.voiceSessionEnded}|${snap.lastVoiceText}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}`;
+  const b = snap.butler || {};
+  const tu = b.tokenUsage || {};
+  const bSig = `${tu.todayUncached || 0}|${tu.budgetPct || 0}|${b.preferences?.assistantMode || ''}|${b.preferences?.clipboardWatch ? 1 : 0}|${b.preferences?.dailyTokenBudget || 0}|${b.pinnedNotes?.length || 0}|${b.pomodoro?.remainingSec || 0}|${b.activeApp?.appName || ''}|${b.activeApp?.aiBrand || ''}`;
+  const key = `${snap.mood}|${snap.emotionMood}|${snap.updatedAt}|${snap.toolCount}|${snap.invocationCount}|${snap.conversationId}|${snap.lastToolError}|${snap.dialogueQuip}|${snap.lastReplySpeech}|${snap.liveTalkerText}|${snap.liveTalkerTime}|${snap.voiceActive}|${snap.voiceSessionEnded}|${snap.lastVoiceText}|${snap.sidecarPort}|${snap.recentConversations?.length || 0}|${bSig}`;
   if (key === lastStateKey) return;
   lastStateKey = key;
   mainWin.webContents.send('fairy:state', snap);
@@ -1425,7 +1617,8 @@ function createOverlayWindow(port) {
     mainWin.webContents.send('fairy:cmd', 'display-changed');
   });
 
-  mainWin.loadURL(`http://127.0.0.1:${port}/`);
+  const startQuery = pendingControlCmd === 'replay-boot' || FORCE_BOOT ? '?boot=1' : '';
+  mainWin.loadURL(`http://127.0.0.1:${port}/${startQuery}`);
 }
 
 function createTray() {
@@ -1435,17 +1628,29 @@ function createTray() {
   tray = new Tray(icon);
   tray.setToolTip('Fairy III · H.D.D Terminal (Antigravity)');
 
-  const sendCmd = (cmd) => {
-    if (!mainWin || mainWin.isDestroyed()) return;
-    showOverlayWindow(mainWin, false);
-    mainWin.webContents.send('fairy:cmd', cmd);
-  };
+  const sendCmd = (cmd) => dispatchControlCommand(cmd);
 
   const shortcutHint = IS_MAC ? 'Cmd/Option+Shift+F' : 'Alt+Shift+F';
+  const instantHint = IS_MAC ? 'Cmd/Option+Shift+A' : 'Alt+Shift+A';
+  const readClipHint = IS_MAC ? 'Cmd/Option+Shift+R' : 'Alt+Shift+R';
   const contextMenu = Menu.buildFromTemplate([
     { label: '▶ Phát lại Boot + Âm thanh', click: () => sendCmd('replay-boot') },
     { label: '◈ Hiện lời chào H.D.D', click: () => sendCmd('replay-greet') },
     { label: `💬 Bật / Tắt bong bóng (${shortcutHint})`, click: () => sendCmd('toggle-bubble') },
+    { label: `⚡ Mở Trợ lý Tức thì (${instantHint})`, click: () => sendCmd('open-instant') },
+    { label: '📋 Báo cáo H.D.D ngay', click: () => sendCmd('briefing-now') },
+    { label: `🔊 Đọc Clipboard ngay (${readClipHint})`, click: () => sendCmd('read-clipboard') },
+    {
+      label: '⏱ Pomodoro 25 phút',
+      click: () => {
+        executeButlerAction({ action: 'pomodoro-start', minutes: 25 }).then((res) => {
+          if (res?.ok && mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send('fairy:butler-event', res);
+          }
+        }).catch(() => {});
+      },
+    },
+    { type: 'separator' },
     { label: '⚙ Cài đặt H.D.D & Biểu cảm', click: () => sendCmd('open-settings') },
     { label: '↺ Đặt lại vị trí mắt (25vw / 52vh)', click: () => sendCmd('reset-pos') },
     { label: '👁 Hiện / Ẩn mắt Fairy', click: () => sendCmd('toggle-eye') },
@@ -1457,7 +1662,17 @@ function createTray() {
   tray.on('double-click', () => sendCmd('toggle-bubble'));
 }
 
-app.on('second-instance', () => {
+app.on('open-url', (event, rawUrl) => {
+  event.preventDefault();
+  handleFairyProtocolUrl(rawUrl);
+});
+
+app.on('second-instance', (_event, argv) => {
+  const proto = findProtocolArg(argv);
+  if (proto) {
+    handleFairyProtocolUrl(proto);
+    return;
+  }
   if (!mainWin || mainWin.isDestroyed()) return;
   showOverlayWindow(mainWin, true);
   mainWin.webContents.send('fairy:cmd', 'replay-boot');
@@ -2316,6 +2531,461 @@ async function pollLiveVoiceSubtitle() {
   }
 }
 
+function stopPomodoro(silent = false) {
+  if (pomodoroTimer) {
+    clearInterval(pomodoroTimer);
+    pomodoroTimer = null;
+  }
+  const wasActive = pomodoroState.active;
+  pomodoroState = { ...pomodoroState, active: false, startedAt: 0, endsAt: 0, remainingSec: 0 };
+  if (!silent) pushStateToRenderer();
+  return wasActive;
+}
+
+function startPomodoro(minutes = 25) {
+  stopPomodoro(true);
+  const mins = Math.max(1, Math.min(120, Math.round(Number(minutes) || 25)));
+  const now = Date.now();
+  const endsAt = now + mins * 60_000;
+  pomodoroState = { active: true, startedAt: now, endsAt, remainingSec: mins * 60, durationMin: mins };
+  pushStateToRenderer();
+  pomodoroTimer = setInterval(() => {
+    const rem = Math.max(0, Math.ceil((pomodoroState.endsAt - Date.now()) / 1000));
+    pomodoroState = { ...pomodoroState, remainingSec: rem };
+    pushStateToRenderer();
+    if (rem <= 0) {
+      stopPomodoro(true);
+      butler.recordPomodoroCompleted();
+      const quip = `— Ting~ Hết ${mins} phút tập trung rồi, Master. Đề xuất: đứng dậy uống nước và thư giãn mắt hai phút nhé.`;
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('fairy:butler-event', {
+          kind: 'pomodoro-done',
+          mood: 'done',
+          quip,
+        });
+      }
+      if (ttsEnabled && !IS_SMOKE_TEST) enqueueFairySpeech(quip).catch(() => {});
+      pushStateToRenderer();
+    }
+  }, 1000);
+  return pomodoroState;
+}
+
+function readMacForegroundApp() {
+  return new Promise((resolve) => {
+    const script = `
+      tell application "System Events"
+        set p to first application process whose frontmost is true
+        set pname to name of p
+        set wtitle to ""
+        try
+          if (count of windows of p) > 0 then set wtitle to name of window 1 of p
+        end try
+        return pname & "\t" & wtitle
+      end tell`;
+    execFile('osascript', ['-e', script], { timeout: 800 }, (err, stdout) => {
+      if (err) {
+        resolve({ ok: false });
+        return;
+      }
+      const [processName = '', windowTitle = ''] = String(stdout || '').trim().split('\t');
+      resolve({ ok: true, process: processName, title: windowTitle });
+    });
+  });
+}
+
+async function pollActiveApp() {
+  if (IS_SMOKE_TEST || (!IS_WIN && !IS_MAC)) return;
+  try {
+    let raw = null;
+    if (IS_WIN) {
+      if (!voiceWorkerReady || voicePending.size > 0) return;
+      raw = await sendVoiceWorkerCommand('GET_FOREGROUND_APP', {}, 1200);
+    } else {
+      raw = await readMacForegroundApp();
+    }
+    if (!raw || !raw.ok) return;
+    const proc = String(raw.process || '').trim();
+    const title = String(raw.title || '').trim();
+    if (!proc || /fairy iii/i.test(title) || (/^electron$/i.test(proc) && (!title || /fairy/i.test(title)))) {
+      return;
+    }
+    const info = classifyForegroundApp(proc, title);
+    currentActiveApp = info;
+    const now = Date.now();
+    if (now - lastObservedAppAt >= 30_000) {
+      lastObservedAppAt = now;
+      butler.recordObservedApp(info.appName);
+      butler.saveMemory();
+    }
+    const snap = readSnapshot();
+    const prefs = butler.loadMemory().preferences;
+    if (
+      info.category === 'ai-web' &&
+      !snap.voiceActive &&
+      !prefs.clipboardWatch &&
+      overlayPhase === 'dock' &&
+      now - lastAiWebTipAt > 30 * 60_000
+    ) {
+      lastAiWebTipAt = now;
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('fairy:butler-event', {
+          kind: 'ai-web',
+          mood: 'smug',
+          quip: pickQuip('aiWeb', now),
+          aiBrand: info.aiBrand,
+        });
+      }
+    }
+    pushStateToRenderer();
+  } catch {
+    // Ignore transient foreground app probe error.
+  }
+}
+
+function pollProactiveAlerts() {
+  if (IS_SMOKE_TEST || overlayPhase !== 'dock') return;
+  const snap = readSnapshot();
+  if (snap.voiceActive) return;
+  const tokenUsage = snap.butler?.tokenUsage || getCachedTokenUsage(snap.conversationId, false);
+  const idleMs = Date.now() - lastUserActivityAt;
+  const alert = butler.evaluateProactiveAlert({ tokenUsage, idleMs });
+  if (!alert) return;
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.send('fairy:butler-event', { ...alert, source: 'proactive' });
+  }
+  if (ttsEnabled && alert.speakText && !IS_SMOKE_TEST) {
+    enqueueFairySpeech(alert.speakText).catch(() => {});
+  }
+}
+
+function isReadableClipboardCandidate(raw, cleaned) {
+  const s = String(raw || '').trim();
+  if (!cleaned || cleaned.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length < 18) return false;
+  if (/^https?:\/\/\S+$/i.test(s)) return false;
+  if (/^(?:[A-Za-z]:\\|\/)[^\r\n]+$/.test(s)) return false;
+  return true;
+}
+
+function pollClipboardWatcher() {
+  if (IS_SMOKE_TEST) return;
+  const prefs = butler.loadMemory().preferences;
+  if (!prefs.clipboardWatch) return;
+  let txt = '';
+  try {
+    txt = clipboard.readText() || '';
+  } catch {
+    return;
+  }
+  if (!txt || txt === lastSeenClipboardText) return;
+  lastSeenClipboardText = txt;
+  const cleaned = cleanTextForSpeech(txt);
+  if (!isReadableClipboardCandidate(txt, cleaned)) return;
+  butler.recordClipboardRead();
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.send('fairy:butler-event', {
+      kind: 'clipboard',
+      mood: 'comforting',
+      quip: `📋 Đọc Clipboard: ${cleaned}`,
+    });
+  }
+  if (!IS_SMOKE_TEST) {
+    enqueueFairySpeech(cleaned).catch(() => {});
+  }
+}
+
+function startButlerMonitors() {
+  if (IS_SMOKE_TEST) return;
+  if (!activeAppTimer) {
+    activeAppTimer = setInterval(pollActiveApp, 3000);
+  }
+  if (!alertTimer) {
+    alertTimer = setInterval(pollProactiveAlerts, 30_000);
+  }
+  if (!clipboardTimer) {
+    try { lastSeenClipboardText = clipboard.readText() || ''; } catch {}
+    clipboardTimer = setInterval(pollClipboardWatcher, 650);
+  }
+}
+
+function resolveBestWorkspacePath(snap) {
+  const mem = butler.loadMemory();
+  const candidates = [
+    ...(Array.isArray(snap?.workspaceUris) ? snap.workspaceUris : []),
+    snap?.cwd || '',
+    ...(mem.knownWorkspaces || []).map((w) => w.path),
+    join(APP_DATA_DIR, 'scratch'),
+  ];
+  for (const c of candidates) {
+    let p = String(c || '').trim();
+    if (!p) continue;
+    if (/^file:\/\//i.test(p)) {
+      try {
+        p = require('node:url').fileURLToPath(p);
+      } catch {
+        continue;
+      }
+    }
+    if (existsSync(p)) return p;
+  }
+  return '';
+}
+
+async function executeButlerAction(req = {}) {
+  lastUserActivityAt = Date.now();
+  const action = String(req?.action || '').trim();
+  const snap = readSnapshot();
+
+  if (action === 'run-command-text') {
+    const parsed = parseButlerCommand(req?.text || '');
+    if (parsed.type === 'noop') return { ok: false, error: 'empty_command' };
+    if (parsed.type === 'send-antigravity') {
+      const res = await executeHybridAction({
+        action: 'send-message',
+        conversationId: req?.conversationId || snap.conversationId || '',
+        message: parsed.message,
+      });
+      return {
+        ok: Boolean(res?.ok),
+        kind: 'command',
+        mood: 'working',
+        quip: res?.executedDirect
+          ? '— Ting~ Đã chuyển tiếp sang phiên Antigravity cho Master.'
+          : '— Đã đẩy lệnh vào Antigravity Hybrid Bridge.',
+        hybrid: res,
+      };
+    }
+    if (parsed.type === 'help') {
+      return {
+        ok: true,
+        kind: 'help',
+        mood: 'smug',
+        quip:
+          'LỆNH TỨC THÌ H.D.D:\n' +
+          '• "báo cáo" | "điện năng" | "git"\n' +
+          '• "đọc clipboard" | "bật/tắt tự đọc"\n' +
+          '• "pomodoro 25" | "dừng pomodoro"\n' +
+          '• "ghi nhớ <nội dung>" | "bộ nhớ"\n' +
+          '• "mở chatgpt/claude/gemini/github" | "tìm <từ khóa>"\n' +
+          '• "antigravity: <câu hỏi>"',
+      };
+    }
+    if (parsed.type === 'unknown') {
+      return {
+        ok: true,
+        kind: 'hint',
+        mood: 'idle',
+        quip: '— Chế độ Tức thì chuyên lệnh hệ thống, đọc Clipboard và mở nhanh công cụ. Gõ "help" để xem lệnh, hoặc bấm badge chuyển về AGY để chat với Antigravity.',
+      };
+    }
+    return executeButlerAction({ ...parsed, action: parsed.type, speak: req?.speak });
+  }
+
+  if (action === 'briefing-now') {
+    const usage = getCachedTokenUsage(snap.conversationId, true);
+    const briefing = butler.generateSessionBriefing({
+      activeConvId: snap.conversationId,
+      cwd: snap.cwd || '',
+      workspaceUris: snap.workspaceUris || [],
+      tokenUsage: usage,
+    });
+    const shouldSpeak = req?.speak !== false && ttsEnabled && !IS_SMOKE_TEST && !(req?.auto && snap.voiceActive);
+    if (shouldSpeak && briefing.speechText) {
+      enqueueFairySpeech(briefing.speechText).catch(() => {});
+    }
+    pushStateToRenderer();
+    return {
+      ok: true,
+      kind: 'briefing',
+      mood: usage.budgetPct >= 90 ? 'alert' : 'smug',
+      quip: briefing.cardText,
+      speechText: briefing.speechText,
+      repos: briefing.repos,
+    };
+  }
+
+  if (action === 'power-report') {
+    const usage = getCachedTokenUsage(snap.conversationId, true);
+    const modelsLine = usage.topModels.length
+      ? usage.topModels.map((m) => `${m.label}: ${formatCompactTokens(m.uncached)}`).join(' · ')
+      : 'Chưa có lượt gọi model nào hôm nay';
+    const card =
+      `ĐIỆN NĂNG H.D.D (${usage.billLabel})\n` +
+      `• Hôm nay: ${formatCompactTokens(usage.todayUncached)} / ${formatCompactTokens(usage.budgetTokens)} (${usage.budgetPct}%)\n` +
+      `• Cache đọc: ${formatCompactTokens(usage.todayCacheRead)} · Phiên này: ${formatCompactTokens(usage.sessionUncached)}\n` +
+      `• Mô hình: ${modelsLine}\n` +
+      `• Lưu ý: Số liệu token thực tế từ log cục bộ so với Định mức H.D.D tự đặt.`;
+    const speechText = `Ghi nhận dữ liệu: Hôm nay hệ thống đã dùng ${formatCompactTokens(usage.todayUncached)} token mới, đạt ${usage.budgetPct}% định mức Điện năng H.D.D.`;
+    if (req?.speak && ttsEnabled && !IS_SMOKE_TEST && !snap.voiceActive) {
+      enqueueFairySpeech(speechText).catch(() => {});
+    }
+    return { ok: true, kind: 'power-report', mood: usage.budgetPct >= 90 ? 'alert' : 'smug', quip: card, tokenUsage: usage };
+  }
+
+  if (action === 'read-clipboard') {
+    let rawClip = '';
+    try { rawClip = clipboard.readText() || ''; } catch {}
+    lastSeenClipboardText = rawClip;
+    const cleaned = cleanTextForSpeech(rawClip);
+    if (!cleaned) {
+      return {
+        ok: false,
+        kind: 'clipboard',
+        mood: 'idle',
+        quip: 'Clipboard hiện đang trống hoặc không có văn bản đọc được, thưa Master.',
+      };
+    }
+    butler.recordClipboardRead();
+    if (!IS_SMOKE_TEST) {
+      enqueueFairySpeech(cleaned).catch(() => {});
+    }
+    pushStateToRenderer();
+    return {
+      ok: true,
+      kind: 'clipboard',
+      mood: 'comforting',
+      quip: `📋 Đang đọc Clipboard: ${cleaned}`,
+      speechText: cleaned,
+    };
+  }
+
+  if (action === 'toggle-clipboard-watch') {
+    const cur = Boolean(butler.loadMemory().preferences.clipboardWatch);
+    const next = typeof req?.enabled === 'boolean' ? req.enabled : !cur;
+    try { lastSeenClipboardText = clipboard.readText() || ''; } catch {}
+    butler.updatePrefs({ clipboardWatch: next });
+    pushStateToRenderer();
+    return {
+      ok: true,
+      kind: 'clipboard-watch',
+      clipboardWatch: next,
+      mood: next ? 'smug' : 'idle',
+      quip: next
+        ? '— Đã bật Tự đọc Clipboard. Bất cứ đoạn văn bản nào Master copy từ trình duyệt hay ChatGPT/Claude sẽ được tôi đọc ngay.'
+        : '— Đã tắt chế độ Tự đọc Clipboard, Master.',
+    };
+  }
+
+  if (action === 'open-workspace') {
+    const targetPath = resolveBestWorkspacePath(snap);
+    if (!targetPath) {
+      return { ok: false, mood: 'alert', quip: 'Chưa tìm thấy thư mục dự án nào trong Bộ nhớ H.D.D.' };
+    }
+    const err = await shell.openPath(targetPath);
+    if (err) {
+      return { ok: false, mood: 'alert', quip: `Không mở được thư mục: ${err}` };
+    }
+    return { ok: true, kind: 'workspace', path: targetPath, mood: 'done', quip: `📂 Đã mở thư mục: ${targetPath}` };
+  }
+
+  if (action === 'git-status') {
+    const repos = butler.collectGitStatus({ cwd: snap.cwd || '', workspaceUris: snap.workspaceUris || [] });
+    if (!repos.length) {
+      return { ok: true, kind: 'git', repos: [], mood: 'idle', quip: 'Chưa phát hiện kho Git nào trong danh sách H.D.D.' };
+    }
+    const text = repos
+      .map((r) => `🌿 ${r.name} [${r.branch}]: ${r.dirtyCount === 0 ? 'sạch' : `${r.dirtyCount} thay đổi`}${r.ahead ? ` · ↑${r.ahead}` : ''}`)
+      .join('\n');
+    return { ok: true, kind: 'git', repos, mood: repos.some((r) => r.dirtyCount > 0) ? 'working' : 'done', quip: text };
+  }
+
+  if (action === 'pomodoro-start') {
+    const mins = Math.max(1, Math.min(120, Math.round(Number(req?.minutes) || 25)));
+    const pomo = startPomodoro(mins);
+    const quip = `⏱ Đã đặt đồng hồ tập trung ${mins} phút. Mời Master làm việc — đừng để tôi bắt gặp ngài xao nhãng.`;
+    if (ttsEnabled && !IS_SMOKE_TEST && !snap.voiceActive) enqueueFairySpeech(quip).catch(() => {});
+    return { ok: true, kind: 'pomodoro', pomodoro: pomo, mood: 'working', quip };
+  }
+
+  if (action === 'pomodoro-stop') {
+    const had = stopPomodoro(false);
+    return {
+      ok: true,
+      kind: 'pomodoro',
+      mood: 'idle',
+      quip: had ? '⏱ Đã hủy đồng hồ Pomodoro, Master.' : 'Hiện không có bộ đếm Pomodoro nào đang chạy.',
+    };
+  }
+
+  if (action === 'open-external') {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(String(req?.url || ''));
+    } catch {
+      return { ok: false, mood: 'alert', quip: 'Đường dẫn không hợp lệ.' };
+    }
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+      return { ok: false, mood: 'alert', quip: 'Hệ thống H.D.D chỉ cho phép mở liên kết HTTP/HTTPS an toàn.' };
+    }
+    await shell.openExternal(parsedUrl.toString());
+    return {
+      ok: true,
+      kind: 'external',
+      url: parsedUrl.toString(),
+      mood: 'done',
+      quip: `🌐 Đã mở ${req?.label || parsedUrl.hostname} trên trình duyệt mặc định cho Master.`,
+    };
+  }
+
+  if (action === 'focus-antigravity') {
+    const res = await triggerAntigravityVoice({ mode: 'focus-chat' });
+    return {
+      ok: Boolean(res?.ok),
+      kind: 'focus',
+      mood: res?.ok ? 'done' : 'alert',
+      quip: res?.ok ? '— Đã đưa Antigravity lên tiền cảnh cho Master.' : 'Không tìm thấy cửa sổ Antigravity đang mở.',
+    };
+  }
+
+  if (action === 'replay-boot') {
+    dispatchControlCommand('replay-boot');
+    return { ok: true, kind: 'boot', mood: 'smug', quip: '— Khởi chạy lại trình tự H.D.D.' };
+  }
+
+  if (action === 'memory-add-note') {
+    const note = butler.addPinnedNote(req?.text || '');
+    if (!note) return { ok: false, mood: 'alert', quip: 'Nội dung ghi chú trống.' };
+    pushStateToRenderer();
+    return { ok: true, kind: 'memory', note, mood: 'done', quip: `📌 Đã lưu vào Bộ nhớ H.D.D: "${note.text}"` };
+  }
+
+  if (action === 'memory-remove-note') {
+    butler.removePinnedNote(String(req?.id || ''));
+    pushStateToRenderer();
+    return { ok: true, kind: 'memory' };
+  }
+
+  if (action === 'memory-clear-notes') {
+    butler.clearPinnedNotes();
+    pushStateToRenderer();
+    return { ok: true, kind: 'memory', mood: 'done', quip: '📌 Đã dọn sạch toàn bộ ghi chú H.D.D.' };
+  }
+
+  if (action === 'memory-list' || action === 'memory-get') {
+    const mem = butler.loadMemory();
+    const notes = mem.pinnedNotes || [];
+    const lines = notes.length
+      ? notes.map((n, i) => `${i + 1}. ${n.text}`).join('\n')
+      : 'Chưa có ghi chú nào. Gõ "ghi nhớ <nội dung>" để lưu.';
+    return {
+      ok: true,
+      kind: 'memory',
+      mood: 'idle',
+      quip: `BỘ NHỚ H.D.D (${mem.stats.totalSessions || 1} phiên · ${mem.stats.pomodorosCompleted || 0} Pomodoro)\n${lines}`,
+      butler: buildButlerSnapshotField(snap.conversationId, false),
+    };
+  }
+
+  if (action === 'set-assistant-mode') {
+    const mode = req?.mode === 'instant' ? 'instant' : 'antigravity';
+    butler.updatePrefs({ assistantMode: mode });
+    pushStateToRenderer();
+    return { ok: true, kind: 'mode', assistantMode: mode };
+  }
+
+  return { ok: false, error: 'unknown_butler_action' };
+}
+
 ipcMain.on('fairy:set-tts', (_ev, enabled) => {
   ttsEnabled = Boolean(enabled);
   if (ttsEnabled && !IS_SMOKE_TEST) startTtsWorker();
@@ -2326,6 +2996,20 @@ ipcMain.handle('fairy:get-auto-mute', () => autoMuteAntigravity);
 ipcMain.on('fairy:set-auto-mute', (_ev, enabled) => {
   autoMuteAntigravity = Boolean(enabled);
   syncAntigravityMuteState(true);
+});
+
+ipcMain.handle('fairy:butler-action', (_ev, req) => executeButlerAction(req));
+ipcMain.handle('fairy:set-butler-prefs', (_ev, patch) => {
+  const prevClip = Boolean(butler.loadMemory().preferences.clipboardWatch);
+  const prefs = butler.updatePrefs(patch || {});
+  if (!prevClip && prefs.clipboardWatch) {
+    try { lastSeenClipboardText = clipboard.readText() || ''; } catch {}
+  }
+  if (patch && patch.dailyTokenBudget !== undefined) {
+    lastTokenScanAt = 0;
+  }
+  pushStateToRenderer();
+  return prefs;
 });
 
 ipcMain.handle('fairy:speak-text', async (_ev, text) => {
@@ -2344,24 +3028,45 @@ ipcMain.on('fairy:ready', () => {
   } else {
     showOverlayWindow(mainWin, false);
     setTimeout(() => showOverlayWindow(mainWin, false), 250);
+    if (pendingControlCmd) {
+      const cmd = pendingControlCmd;
+      pendingControlCmd = '';
+      if (cmd !== 'replay-boot') {
+        setTimeout(() => dispatchControlCommand(cmd), 150);
+      }
+    }
   }
 });
 
 ipcMain.on('fairy:quit', () => app.quit());
 
 app.whenReady().then(async () => {
+  if (!IS_SMOKE_TEST) {
+    butler.recordSessionStart();
+  }
   const port = await startLocalMediaServer();
   createOverlayWindow(port);
   if (!IS_SMOKE_TEST) {
     createTray();
-    const toggleBubble = () => {
-      if (mainWin && !mainWin.isDestroyed()) {
-        mainWin.webContents.send('fairy:cmd', 'toggle-bubble');
-      }
-    };
+    const toggleBubble = () => dispatchControlCommand('toggle-bubble');
+    const openInstant = () => dispatchControlCommand('open-instant');
+    const readClipNow = () => dispatchControlCommand('read-clipboard');
+
     for (const accelerator of ['Alt+Shift+F', 'CommandOrControl+Shift+F']) {
       try {
         globalShortcut.register(accelerator, toggleBubble);
+      } catch {
+        // Ignore shortcut collision.
+      }
+    }
+    const extraHotkeys = [
+      ['Alt+Shift+A', openInstant],
+      ['Alt+Shift+R', readClipNow],
+      ...(IS_MAC ? [['CommandOrControl+Option+A', openInstant], ['CommandOrControl+Option+R', readClipNow]] : []),
+    ];
+    for (const [acc, fn] of extraHotkeys) {
+      try {
+        globalShortcut.register(acc, fn);
       } catch {
         // Ignore shortcut collision.
       }
@@ -2372,6 +3077,7 @@ app.whenReady().then(async () => {
   if (!IS_SMOKE_TEST) {
     startTtsWorker();
     scheduleNextUiaPoll(900);
+    startButlerMonitors();
   }
 });
 
@@ -2390,6 +3096,10 @@ app.on('will-quit', (e) => {
   }
   globalShortcut.unregisterAll();
   clearInterval(pollTimer);
+  clearInterval(activeAppTimer);
+  clearInterval(alertTimer);
+  clearInterval(clipboardTimer);
+  clearInterval(pomodoroTimer);
   clearTimeout(uiaPollTimer);
   clearTimeout(voiceDebounceTimer);
   clearTimeout(stopDebounceTimer);

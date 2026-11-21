@@ -1051,6 +1051,19 @@ public static class AntigravityVoiceBridge {
       int touched = SetProcessMute("Antigravity", false);
       return "{\"ok\":true,\"muted\":false,\"count\":" + touched + "}";
     }
+    if (cmd == "GET_FOREGROUND_APP") {
+      IntPtr fg = GetForegroundWindow();
+      if (fg == IntPtr.Zero) return "{\"ok\":false,\"error\":\"no_fg\"}";
+      uint pid = 0;
+      GetWindowThreadProcessId(fg, out pid);
+      string procName = "";
+      try {
+        if (pid > 0) procName = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName ?? "";
+      } catch {}
+      var titleSb = new StringBuilder(256);
+      GetWindowText(fg, titleSb, 256);
+      return "{\"ok\":true,\"process\":\"" + EscapeJson(procName) + "\",\"title\":\"" + EscapeJson(titleSb.ToString()) + "\"}";
+    }
 
     if (muteAg) {
       SetProcessMute("Antigravity", true);

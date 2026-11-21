@@ -31,5 +31,12 @@ contextBridge.exposeInMainWorld('fairyDesktop', {
   setStartup: (enabled) => ipcRenderer.invoke('fairy:set-startup', Boolean(enabled)),
   triggerVoice: (payload) => ipcRenderer.invoke('fairy:trigger-voice', payload),
   hybridAction: (req) => ipcRenderer.invoke('fairy:hybrid-action', req),
+  butlerAction: (req) => ipcRenderer.invoke('fairy:butler-action', req),
+  setButlerPrefs: (patch) => ipcRenderer.invoke('fairy:set-butler-prefs', patch),
+  onButlerEvent: (cb) => {
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('fairy:butler-event', handler);
+    return () => ipcRenderer.removeListener('fairy:butler-event', handler);
+  },
   quit: () => ipcRenderer.send('fairy:quit'),
 });

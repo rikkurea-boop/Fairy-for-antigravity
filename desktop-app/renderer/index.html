@@ -73,11 +73,11 @@
       </div>
     </div>
 
-    <!-- DSH-style Status Bubble / Hybrid Chat Bridge anchored next to Fairy Eye -->
-    <div id="bubble" class="fz3-bubble hidden" data-interactive="1" data-side="right" data-mode="usage">
+    <!-- DSH-style Status Bubble / Hybrid Chat + Instant Butler Bridge anchored next to Fairy Eye -->
+    <div id="bubble" class="fz3-bubble hidden" data-interactive="1" data-side="right" data-mode="usage" data-assistant="antigravity">
       <div class="fz3-bubble-head-row">
         <span id="bubble-head" class="fz3-bubble-head">FAIRY III // GIÁM SÁT H.D.D</span>
-        <span id="b-hybrid-badge" class="fz3-hybrid-badge" title="Liên kết Plugin Antigravity">HYBRID</span>
+        <button id="btn-mode-toggle" type="button" class="fz3-hybrid-badge" data-mode="antigravity" title="Chuyển chế độ: AGY (Antigravity) ↔ TỨC THÌ (Trợ lý Toàn hệ thống)">AGY</button>
         <span id="b-voice-badge" class="fz3-voice-badge hidden">ĐANG NGHE</span>
         <button id="btn-expand-bubble" type="button" class="fz3-bubble-x" title="Mở rộng / Thu gọn">▾</button>
         <button id="btn-close-bubble" type="button" class="fz3-bubble-x" title="Đóng">✕</button>
@@ -98,15 +98,35 @@
         <span class="fz3-bubble-k">Phiên</span>
         <span id="b-counts" class="fz3-bubble-v">0 lượt · 0 tool</span>
       </div>
+      <div class="fz3-bubble-row fz3-bubble-detail fz3-power-row">
+        <span class="fz3-bubble-k">Điện năng H.D.D</span>
+        <span id="b-power-val" class="fz3-bubble-v">0 / 20M (0%)</span>
+      </div>
+      <div class="fz3-power-track fz3-bubble-detail" aria-hidden="true">
+        <span id="b-power-bar" class="fz3-power-fill" data-level="nominal" style="width:0%"></span>
+      </div>
+      <div id="b-context-row" class="fz3-bubble-row fz3-bubble-detail">
+        <span id="b-context-key" class="fz3-bubble-k">Ngữ cảnh</span>
+        <span id="b-context-val" class="fz3-bubble-v">0 ghi chú</span>
+      </div>
       <div id="b-quip" class="fz3-bubble-sub"></div>
+      <div id="b-notes-box" class="fz3-notes-box fz3-bubble-detail hidden"></div>
       <form id="b-chat-form" class="fz3-b-chat">
         <input id="b-chat-input" type="text" class="fz3-b-input" placeholder="Gửi lệnh / chat thẳng vào Antigravity..." autocomplete="off">
         <button id="b-chat-send" type="submit" class="fz3-b-send">Gửi</button>
-        <button id="btn-b-mic" type="button" class="fz3-b-mic" title="Bật Voice Mode (Đàm thoại trực tiếp)">🔊</button>
+        <button id="btn-b-mic" type="button" class="fz3-b-mic" title="Bật Voice Mode (hoặc Đọc Clipboard ở Tức thì)">🔊</button>
       </form>
       <div class="fz3-conv-row">
         <select id="b-conv-select" class="fz3-conv-select" title="Chọn phiên Antigravity"></select>
         <button id="btn-b-newconv" type="button" class="fz3-mini-act fz3-conv-new" title="Tạo phiên chat mới">+ Phiên</button>
+      </div>
+      <div id="b-butler-bar" class="fz3-butler-bar">
+        <button id="btn-butler-brief" type="button" class="fz3-mini-act" title="Báo cáo H.D.D đầu phiên ngay">📋 Báo cáo</button>
+        <button id="btn-butler-clip" type="button" class="fz3-mini-act" title="Đọc ngay nội dung Clipboard">🔊 Đọc Clip</button>
+        <button id="btn-butler-watch" type="button" class="fz3-mini-act" data-on="0" title="Tự đọc khi copy văn bản ở trình duyệt / app ngoài">👁 Tự đọc</button>
+        <button id="btn-butler-pomo" type="button" class="fz3-mini-act" data-on="0" title="Bắt đầu / Dừng Pomodoro 25 phút">⏱ 25p</button>
+        <button id="btn-butler-folder" type="button" class="fz3-mini-act" title="Mở thư mục dự án hiện tại">📂 Thư mục</button>
+        <button id="btn-butler-git" type="button" class="fz3-mini-act" title="Kiểm tra trạng thái Git">🌿 Git</button>
       </div>
       <div id="b-actions" class="fz3-bubble-actions">
         <button id="btn-b-boot" type="button" class="fz3-mini-act">▶ Boot</button>
@@ -170,6 +190,42 @@
 
         <div class="fz3-set-row">
           <div>
+            <div class="fz3-set-label">Báo cáo Đầu phiên H.D.D tự động</div>
+            <div class="fz3-set-desc">Tóm tắt nhanh nhánh Git, tệp chưa commit &amp; điện năng hôm nay khi Fairy neo dock</div>
+          </div>
+          <button id="sw-briefing" type="button" class="fz3-set-switch" data-on="1"></button>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Cảnh báo "Hóa đơn tiền điện" &amp; Trực đêm</div>
+            <div class="fz3-set-desc">Nhắc nhở kiểu Fairy ZZZ khi token chạm 75%/90%/100%, AFK 45p hoặc làm qua nửa đêm</div>
+          </div>
+          <button id="sw-elec-alert" type="button" class="fz3-set-switch" data-on="1"></button>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
+            <div class="fz3-set-label">Tự đọc Clipboard cho Trình duyệt &amp; App ngoài</div>
+            <div class="fz3-set-desc">Tự động đọc bằng giọng Fairy khi copy văn bản ở ChatGPT, Claude, Gemini Web hoặc trình duyệt</div>
+          </div>
+          <button id="sw-clipwatch" type="button" class="fz3-set-switch" data-on="0"></button>
+        </div>
+
+        <div class="fz3-set-row fz3-set-stack">
+          <div class="fz3-set-label">Định mức Điện năng ngày (H.D.D Local Budget)</div>
+          <div class="fz3-set-desc">Đối chiếu token input+output thực tế trong log Antigravity cục bộ (không phải quota máy chủ)</div>
+          <div class="fz3-set-seg fz3-set-seg-wrap" style="margin-top:7px">
+            <button type="button" class="fz3-set-segbtn" data-budget-pick="5000000">5M</button>
+            <button type="button" class="fz3-set-segbtn" data-budget-pick="10000000">10M</button>
+            <button type="button" class="fz3-set-segbtn" data-budget-pick="20000000">20M</button>
+            <button type="button" class="fz3-set-segbtn" data-budget-pick="50000000">50M</button>
+            <button type="button" class="fz3-set-segbtn" data-budget-pick="100000000">100M</button>
+          </div>
+        </div>
+
+        <div class="fz3-set-row">
+          <div>
             <div class="fz3-set-label">Tốc độ hoạt ảnh mắt Fairy</div>
             <div class="fz3-set-desc">Đồng bộ nhịp thở, sóng xung & xoay viền theo Fairy-DSH</div>
           </div>
@@ -186,6 +242,7 @@
           <div class="fz3-set-seg fz3-set-seg-wrap" style="margin-top:7px">
             <button type="button" class="fz3-set-segbtn" data-dbl-pick="voice-mode">🔊 Voice Mode</button>
             <button type="button" class="fz3-set-segbtn" data-dbl-pick="hybrid-chat">🔗 Chat Hybrid</button>
+            <button type="button" class="fz3-set-segbtn" data-dbl-pick="instant-butler">⚡ Trợ lý tức thì</button>
             <button type="button" class="fz3-set-segbtn" data-dbl-pick="win-voice">🗣️ Win+H</button>
             <button type="button" class="fz3-set-segbtn" data-dbl-pick="toggle-bubble">📊 Bảng H.D.D</button>
           </div>

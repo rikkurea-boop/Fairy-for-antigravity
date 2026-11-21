@@ -47,32 +47,45 @@ def emit_json(payload: dict):
     REAL_STDOUT.flush()
 
 
-def split_speech_clauses(raw: str, max_chars: int = 155, max_clauses: int = 1):
+def split_speech_clauses(raw: str, max_chars: int = 340, max_clauses: int = 3):
     text = re.sub(r"\s+", " ", str(raw or "")).strip()
     if not text:
         return []
     parts = [p.strip(" -—–~") for p in re.split(r"(?<=[.!?])\s+|\n+", text)]
-    merged = []
+    clauses = []
     total_len = 0
     for part in parts:
         if not part or not re.search(r"[\wÀ-ỹ]", part, re.UNICODE):
             continue
-        if len(part) > max_chars:
-            part = re.split(r"[,;]\s*", part)[0].strip()
-        if not part:
+        if len(part) > 190:
+            subparts = [sp.strip() for sp in re.split(r"(?<=[,;:])\s+", part) if sp.strip()]
+            buf = ""
+            for sp in subparts:
+                if buf and len(buf) + len(sp) + 1 > 160:
+                    clauses.append(buf)
+                    total_len += len(buf) + 1
+                    buf = sp
+                    if len(clauses) >= max_clauses or total_len >= max_chars:
+                        break
+                else:
+                    buf = f"{buf} {sp}".strip() if buf else sp
+            if buf and len(clauses) < max_clauses and total_len < max_chars:
+                if not re.search(r"[.!?]$", buf):
+                    buf += "."
+                clauses.append(buf)
+                total_len += len(buf) + 1
+            if len(clauses) >= max_clauses or total_len >= max_chars:
+                break
             continue
-        if len(part) > max_chars:
-            part = part[: max_chars - 3].rstrip() + "."
         if not re.search(r"[.!?]$", part):
             part += "."
-        if merged and total_len + len(part) + 1 > max_chars:
+        if clauses and total_len + len(part) + 1 > max_chars:
             break
-        merged.append(part)
+        clauses.append(part)
         total_len += len(part) + 1
-    if not merged:
-        return []
-    single = " ".join(merged)
-    return [single][:max_clauses] if max_clauses == 1 else merged[:max_clauses]
+        if len(clauses) >= max_clauses:
+            break
+    return clauses
 
 
 def main():
@@ -110,17 +123,35 @@ def main():
                 continue
 
             os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-            tmp_out = f"{out_path}.tmp.wav"
+            base_root, base_ext = os.path.splitext(out_path)
             t0 = time.perf_counter()
-            with contextlib.redirect_stdout(sys.stderr):
-                y_raw = tf.synthesize_clauses(tts, voice_id, clauses)
-                tf.render_with_locked_preset(y_raw, tmp_out)
-            os.replace(tmp_out, out_path)
+            total_chunks = len(clauses)
+            chunk_paths = []
+            for idx, clause in enumerate(clauses):
+                chunk_out = out_path if total_chunks == 1 else f"{base_root}_c{idx}{base_ext or '.wav'}"
+                tmp_out = f"{chunk_out}.tmp.wav"
+                with contextlib.redirect_stdout(sys.stderr):
+                    y_raw = tts.infer(clause, voice=voice_id, temperature=0.58, top_k=20, silence_p=0.06)
+                    y_seg = tf.trim_silence_taper(y_raw.astype(tf.np.float32), sr=tf.SR)
+                    tf.render_with_locked_preset(y_seg, tmp_out)
+                os.replace(tmp_out, chunk_out)
+                chunk_paths.append(chunk_out)
+                emit_json({
+                    "id": req_id,
+                    "chunk": True,
+                    "chunkIndex": idx,
+                    "totalChunks": total_chunks,
+                    "out": chunk_out,
+                    "clause": clause,
+                    "elapsedMs": int((time.perf_counter() - t0) * 1000),
+                })
+
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             emit_json({
                 "id": req_id,
                 "ok": True,
-                "out": out_path,
+                "out": chunk_paths[0],
+                "chunks": chunk_paths,
                 "clauses": clauses,
                 "elapsedMs": elapsed_ms,
             })

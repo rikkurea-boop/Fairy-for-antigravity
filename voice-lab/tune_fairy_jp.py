@@ -37,26 +37,30 @@ def write_mono_wav(path: str, y: np.ndarray, sr: int = SR):
 
 
 def extract_f0_track(y: np.ndarray, sr: int = SR):
-    """Estimate frame-by-frame F0 (10 ms hop, 40 ms window) via normalized autocorrelation."""
+    """Estimate frame-by-frame F0 (10 ms hop, 40 ms window) via vectorized FFT autocorrelation."""
     flen = int(0.04 * sr)
     hop = int(0.01 * sr)
-    n_frames = max(1, (len(y) - flen) // hop + 1)
-    f0s = np.zeros(n_frames, dtype=np.float64)
-    voiced = np.zeros(n_frames, dtype=bool)
+    if len(y) < flen:
+        return np.zeros(1, dtype=np.float64), np.zeros(1, dtype=bool), hop
+    n_frames = (len(y) - flen) // hop + 1
     lmin, lmax = int(sr / 420), int(sr / 150)
-    win = np.hanning(flen)
 
-    for idx in range(n_frames):
-        fr = y[idx * hop : idx * hop + flen]
-        if len(fr) < flen or np.sqrt(np.mean(fr ** 2)) < 0.01:
-            continue
-        w = fr * win
-        ac = np.correlate(w, w, mode="full")[flen - 1 :]
-        ac = ac / (ac[0] + 1e-12)
-        pk = lmin + int(np.argmax(ac[lmin:lmax]))
-        if ac[pk] > 0.45:
-            f0s[idx] = sr / pk
-            voiced[idx] = True
+    idx = np.arange(n_frames)[:, None] * hop + np.arange(flen)[None, :]
+    frames = y[idx].astype(np.float64)
+    rms = np.sqrt(np.mean(frames ** 2, axis=1))
+    win = np.hanning(flen)
+    w = frames * win[None, :]
+    n_fft = 1 << (2 * flen - 1).bit_length()
+    spec = np.fft.rfft(w, n=n_fft, axis=1)
+    ac = np.fft.irfft(spec * np.conj(spec), n=n_fft, axis=1)[:, :flen]
+    ac_norm = ac / (ac[:, :1] + 1e-12)
+
+    sub = ac_norm[:, lmin:lmax]
+    rel_pk = np.argmax(sub, axis=1)
+    pk = lmin + rel_pk
+    pk_val = sub[np.arange(n_frames), rel_pk]
+    voiced = (rms >= 0.01) & (pk_val > 0.45)
+    f0s = np.where(voiced, sr / np.maximum(pk, 1), 0.0)
     return f0s, voiced, hop
 
 
@@ -124,6 +128,17 @@ def quantize_semitone_fast(y: np.ndarray, snap_alpha: float = 0.80, sr: int = SR
     return yq, f0_targ, voiced, hop
 
 
+def _box_smooth(arr: np.ndarray, win: int) -> np.ndarray:
+    """Fast O(N) centered moving average via cumsum (same shape, edge-replicated padding)."""
+    if win <= 1 or len(arr) == 0:
+        return arr
+    pad_l = win // 2
+    pad_r = win - 1 - pad_l
+    padded = np.pad(arr, (pad_l, pad_r), mode="constant")
+    cs = np.concatenate(([0.0], np.cumsum(padded, dtype=np.float64)))
+    return (cs[win:] - cs[:-win]) / float(win)
+
+
 def apply_staccato_ai_dynamics(y: np.ndarray, sr: int = SR) -> np.ndarray:
     """
     Composed AI Syllable Leveler + Syllable Tail Gate:
@@ -135,8 +150,8 @@ def apply_staccato_ai_dynamics(y: np.ndarray, sr: int = SR) -> np.ndarray:
     # 12 ms short-term RMS smoothed with 15 ms window
     rms_win = max(1, int(0.012 * sr))
     sm_win = max(1, int(0.015 * sr))
-    sq = np.convolve(x ** 2, np.ones(rms_win) / rms_win, mode="same")
-    env = np.convolve(np.sqrt(np.maximum(sq, 0.0)), np.ones(sm_win) / sm_win, mode="same")
+    sq = _box_smooth(x ** 2, rms_win)
+    env = _box_smooth(np.sqrt(np.maximum(sq, 0.0)), sm_win)
 
     active = env[env > np.max(env) * 0.04]
     if len(active) == 0:
@@ -163,7 +178,7 @@ def apply_staccato_ai_dynamics(y: np.ndarray, sr: int = SR) -> np.ndarray:
 
     # 4 ms smooth gain envelope to prevent clicks
     g_win = max(1, int(0.004 * sr))
-    total_gain = np.convolve(level_gain * gate_gain, np.ones(g_win) / g_win, mode="same")
+    total_gain = _box_smooth(level_gain * gate_gain, g_win)
     return (x * total_gain).astype(np.float32)
 
 

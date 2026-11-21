@@ -335,7 +335,9 @@
   let dockScreenPos = null;
   let dockSettled = phase === 'dock';
   let dockSettleTimer = null;
-  let pendingSpeakPayload = null;
+  let pendingSpeakQueue = [];
+  let speakQueue = [];
+  let activeSpeakReqId = 0;
   let lastWindowLayout = { x: 0, y: 0, width: displayBounds.width, height: displayBounds.height, coreX: 130, coreY: 130, flip: false, fullscreen: true };
   let lastFocusable = null;
   let chatInputActive = false;
@@ -847,7 +849,11 @@
     }
   }
 
-  function stopLiveSpeakAudio() {
+  function stopLiveSpeakAudio(clearQueue = true) {
+    if (clearQueue) {
+      speakQueue = [];
+      activeSpeakReqId = 0;
+    }
     if (liveSpeakAudio) {
       try {
         liveSpeakAudio.pause();
@@ -857,38 +863,65 @@
     }
   }
 
-  function playLiveSpeakAudio(payload) {
-    if (!payload || !payload.url || !prefs.tts) return;
-    if (phase === 'boot' || phase === 'greet' || !dockSettled) {
-      pendingSpeakPayload = payload;
-      return;
-    }
+  function startSpeakChunkPlayback(payload) {
     const vol = Math.min(1, Math.max(0, prefs.volume / 100));
-    if (vol <= 0) return;
+    if (vol <= 0 || !payload || !payload.url) return;
     stopGreetingVoice();
-    stopLiveSpeakAudio();
+    stopLiveSpeakAudio(false);
 
     const audio = new Audio(payload.url);
     liveSpeakAudio = audio;
     audio.volume = vol;
     audio.addEventListener('playing', () => {
       if (liveSpeakAudio !== audio) return;
-      setTalkingState(true, 20000);
-      if (phase === 'dock' && payload.text && (bubbleEl.classList.contains('hidden') || bubbleEl.dataset.mode === 'toast' || bubbleEl.dataset.mode === 'turn')) {
-        openBubble('toast', `— ${payload.text}`, 8000);
+      setTalkingState(true, 25000);
+      if (
+        phase === 'dock' &&
+        (Number(payload.chunkIndex) || 0) === 0 &&
+        payload.text &&
+        (bubbleEl.classList.contains('hidden') || bubbleEl.dataset.mode === 'toast' || bubbleEl.dataset.mode === 'turn')
+      ) {
+        openBubble('toast', `— ${payload.text}`, 10000);
       }
     });
-    audio.addEventListener('ended', () => {
+    const finishOrNext = () => {
       if (liveSpeakAudio !== audio) return;
       liveSpeakAudio = null;
-      setTalkingState(false, 0);
-    });
-    audio.addEventListener('error', () => {
-      if (liveSpeakAudio !== audio) return;
-      liveSpeakAudio = null;
-      setTalkingState(false, 0);
-    });
-    audio.play().catch(() => {});
+      const next = speakQueue.shift();
+      if (next && prefs.tts && phase === 'dock' && dockSettled) {
+        startSpeakChunkPlayback(next);
+      } else {
+        setTalkingState(false, 0);
+      }
+    };
+    audio.addEventListener('ended', finishOrNext);
+    audio.addEventListener('error', finishOrNext);
+    audio.play().catch(finishOrNext);
+  }
+
+  function playLiveSpeakAudio(payload) {
+    if (!payload || !payload.url || !prefs.tts) return;
+    if (phase === 'boot' || phase === 'greet' || !dockSettled) {
+      if ((Number(payload.chunkIndex) || 0) === 0) pendingSpeakQueue = [payload];
+      else pendingSpeakQueue.push(payload);
+      return;
+    }
+    const reqId = Number(payload.reqId) || 0;
+    const chunkIdx = Number(payload.chunkIndex) || 0;
+    const isFollowupChunk = chunkIdx > 0 && reqId > 0 && reqId === activeSpeakReqId;
+
+    if (!isFollowupChunk) {
+      stopLiveSpeakAudio(true);
+      activeSpeakReqId = reqId;
+      startSpeakChunkPlayback(payload);
+      return;
+    }
+
+    if (liveSpeakAudio && !liveSpeakAudio.ended) {
+      speakQueue.push(payload);
+    } else {
+      startSpeakChunkPlayback(payload);
+    }
   }
 
   function playGreetingVoice() {
@@ -988,10 +1021,10 @@
           bootStageEl.classList.add('hidden');
           setIgnoreMouse(true);
           syncWindowLayout();
-          if (pendingSpeakPayload) {
-            const p = pendingSpeakPayload;
-            pendingSpeakPayload = null;
-            playLiveSpeakAudio(p);
+          if (pendingSpeakQueue.length > 0) {
+            const items = pendingSpeakQueue.slice();
+            pendingSpeakQueue = [];
+            for (const item of items) playLiveSpeakAudio(item);
           }
         }, 1400);
       } else {

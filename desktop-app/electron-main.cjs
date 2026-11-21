@@ -219,16 +219,43 @@ function computeEffectiveMood(entry, now) {
 }
 
 const dialogueCache = new Map();
-function extractTalkerFromUserContent(raw) {
+function extractTalkerEntriesFromUserContent(raw) {
   const s = String(raw || '');
   const m = /<talker_agent_context>([\s\S]*?)<\/talker_agent_context>/i.exec(s);
-  if (!m) return { liveTalkerTime: '', liveTalkerText: '' };
-  const matches = Array.from(m[1].matchAll(/^\[([^\]]+)\]\s*talker:\s*"([^"]+)"/gm));
-  if (!matches.length) return { liveTalkerTime: '', liveTalkerText: '' };
-  const last = matches.at(-1);
+  if (!m) return [];
+  return Array.from(m[1].matchAll(/^\[([^\]]+)\]\s*talker:\s*"([^"]+)"/gm)).map((hit) => ({
+    ts: String(hit[1] || ''),
+    text: String(hit[2] || '').replace(/\s+/g, ' ').trim(),
+  }));
+}
+
+function mergeLatestCompleteTalker(talkerListsNewestFirst) {
+  const chrono = [];
+  for (let i = talkerListsNewestFirst.length - 1; i >= 0; i -= 1) {
+    chrono.push(...talkerListsNewestFirst[i]);
+  }
+  if (!chrono.length) return { liveTalkerTime: '', liveTalkerText: '' };
+
+  const tail = chrono.at(-1);
+  if (!tail || !tail.text) return { liveTalkerTime: '', liveTalkerText: '' };
+  if (!/[.!?…]["”']?\s*$/.test(tail.text)) {
+    return { liveTalkerTime: '', liveTalkerText: '' };
+  }
+
+  let merged = tail.text;
+  let ts = tail.ts;
+  for (let i = chrono.length - 2; i >= 0; i -= 1) {
+    const prev = chrono[i];
+    if (!prev || !prev.text || /[.!?…]["”']?\s*$/.test(prev.text)) break;
+    const prevClean = prev.text.replace(/-\s*$/, '').trim();
+    if (!prevClean) break;
+    const joiner = prev.text.trimEnd().endsWith('-') ? '' : ' ';
+    merged = `${prevClean}${joiner}${merged}`.trim();
+    ts = prev.ts || ts;
+  }
   return {
-    liveTalkerTime: String(last[1] || ''),
-    liveTalkerText: String(last[2] || '').replace(/\s+/g, ' ').trim().slice(0, 260),
+    liveTalkerTime: ts,
+    liveTalkerText: merged.slice(0, 340),
   };
 }
 
@@ -266,29 +293,32 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
       const lines = buf.subarray(start).toString('utf-8').split('\n').filter((l) => l.trim());
       let userText = '';
       let modelText = '';
-      let liveTalkerText = '';
-      let liveTalkerTime = '';
       let hasStepError = false;
+      const recentTalkerLists = [];
       for (let i = lines.length - 1; i >= 0; i -= 1) {
         try {
           const item = JSON.parse(lines[i]);
           if (!modelText && item.type === 'PLANNER_RESPONSE' && typeof item.content === 'string' && item.content.trim()) {
             modelText = item.content.replace(/\s+/g, ' ').trim().slice(0, 500);
           }
-          if (!userText && item.type === 'USER_INPUT' && typeof item.content === 'string' && item.content.trim()) {
-            const talker = extractTalkerFromUserContent(item.content);
-            liveTalkerText = talker.liveTalkerText;
-            liveTalkerTime = talker.liveTalkerTime;
-            userText = cleanUserTranscriptText(item.content).slice(0, 500);
+          if (item.type === 'USER_INPUT' && typeof item.content === 'string' && item.content.trim()) {
+            if (!userText) {
+              userText = cleanUserTranscriptText(item.content).slice(0, 500);
+            }
+            if (recentTalkerLists.length < 4) {
+              const entries = extractTalkerEntriesFromUserContent(item.content);
+              if (entries.length) recentTalkerLists.push(entries);
+            }
           }
           if (!hasStepError && i >= lines.length - 4 && item.status === 'ERROR') {
             hasStepError = true;
           }
-          if (userText && modelText) break;
+          if (userText && modelText && recentTalkerLists.length >= 2) break;
         } catch {
           // Skip partial boundary line.
         }
       }
+      const { liveTalkerText, liveTalkerTime } = mergeLatestCompleteTalker(recentTalkerLists);
       const data = { userText, modelText, liveTalkerText, liveTalkerTime, hasStepError, mtimeMs: st.mtimeMs };
       dialogueCache.set(logPath, { key: cacheKey, data });
       return data;
@@ -736,11 +766,11 @@ function cleanTextForSpeech(raw) {
   const parts = s.split(/(?<=[.!?])\s+/).filter((p) => p.trim().length > 2);
   let picked = '';
   for (const p of parts) {
-    if (picked && picked.length + p.length + 1 > 210) break;
+    if (picked && picked.length + p.length + 1 > 320) break;
     picked = picked ? `${picked} ${p}` : p;
-    if (picked.length >= 130) break;
+    if (picked.length >= 250) break;
   }
-  return (picked || s.slice(0, 210)).trim();
+  return (picked || s.slice(0, 320)).trim();
 }
 
 function pushStateToRenderer() {
@@ -1420,6 +1450,20 @@ function startTtsWorker() {
           }
           if (typeof msg.id === 'number' && ttsPending.has(msg.id)) {
             const p = ttsPending.get(msg.id);
+            if (msg.chunk === true) {
+              const fileName = String(msg.out || '').split(/[\\/]/).pop();
+              if (fileName && typeof p.onChunk === 'function') {
+                p.onChunk({
+                  reqId: msg.id,
+                  url: `/assets/voice/${fileName}?t=${Date.now()}`,
+                  text: p.text,
+                  clause: msg.clause || '',
+                  chunkIndex: Number(msg.chunkIndex) || 0,
+                  totalChunks: Number(msg.totalChunks) || 1,
+                });
+              }
+              continue;
+            }
             clearTimeout(p.timer);
             ttsPending.delete(msg.id);
             p.resolve(msg);
@@ -1449,7 +1493,7 @@ function startTtsWorker() {
   }
 }
 
-function runTtsSynthesis(text, timeoutMs = 45000) {
+function runTtsSynthesis(text, onChunk = null, timeoutMs = 60000) {
   return new Promise((resolve) => {
     const cleaned = cleanTextForSpeech(text);
     if (!cleaned || IS_SMOKE_TEST) {
@@ -1464,6 +1508,7 @@ function runTtsSynthesis(text, timeoutMs = 45000) {
     const id = ++ttsReqSeq;
     const fileName = `live-${id % 4}.wav`;
     const outPath = join(PLUGIN_ROOT, 'assets', 'voice', fileName);
+    let sawChunk = false;
     const timer = setTimeout(() => {
       if (ttsPending.has(id)) {
         ttsPending.delete(id);
@@ -1472,7 +1517,15 @@ function runTtsSynthesis(text, timeoutMs = 45000) {
     }, timeoutMs);
     ttsPending.set(id, {
       timer,
-      resolve: (res) => resolve({ ...res, url: `/assets/voice/${fileName}?t=${Date.now()}`, text: cleaned }),
+      text: cleaned,
+      onChunk: (chunkPayload) => {
+        sawChunk = true;
+        if (typeof onChunk === 'function') onChunk(chunkPayload);
+      },
+      resolve: (res) => {
+        const resName = String(res?.out || '').split(/[\\/]/).pop() || fileName;
+        resolve({ ...res, reqId: id, sawChunk, url: `/assets/voice/${resName}?t=${Date.now()}`, text: cleaned });
+      },
     });
     try {
       ttsWorker.stdin.write(`${JSON.stringify({ id, text: cleaned, out: outPath })}\n`, 'utf-8');
@@ -1497,9 +1550,20 @@ async function enqueueFairySpeech(text) {
   try {
     while (current) {
       ttsQueuedText = '';
-      lastRes = await runTtsSynthesis(current);
-      if (lastRes.ok && mainWin && !mainWin.isDestroyed() && ttsEnabled) {
-        mainWin.webContents.send('fairy:speak', { url: lastRes.url, text: lastRes.text || current });
+      const activeText = current;
+      lastRes = await runTtsSynthesis(activeText, (chunkPayload) => {
+        if (mainWin && !mainWin.isDestroyed() && ttsEnabled) {
+          mainWin.webContents.send('fairy:speak', chunkPayload);
+        }
+      });
+      if (lastRes.ok && !lastRes.sawChunk && mainWin && !mainWin.isDestroyed() && ttsEnabled) {
+        mainWin.webContents.send('fairy:speak', {
+          reqId: lastRes.reqId || 0,
+          url: lastRes.url,
+          text: lastRes.text || activeText,
+          chunkIndex: 0,
+          totalChunks: 1,
+        });
       }
       current = ttsEnabled ? ttsQueuedText : '';
     }

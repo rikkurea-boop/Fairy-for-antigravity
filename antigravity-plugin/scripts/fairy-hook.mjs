@@ -77,6 +77,22 @@ function cleanUserInputPreview(raw) {
   return compactPreview(plain || raw, 160);
 }
 
+function extractUserContextEntries(raw) {
+  const stripped = stripSystemWrappers(raw);
+  const blocks = Array.from(stripped.matchAll(/<talker_agent_context>([\s\S]*?)<\/talker_agent_context>/gi));
+  const users = [];
+  for (const block of blocks) {
+    const body = block[1] || '';
+    for (const hit of body.matchAll(/^\[[^\]]+\]\s*user:\s*"([^"]+)"/gm)) {
+      const text = String(hit[1] || '').replace(/\s+/g, ' ').trim();
+      if (text) users.push(text.slice(0, 340));
+    }
+  }
+  const tailPlain = cleanUserInputPreview(raw);
+  if (tailPlain) users.push(tailPlain.slice(0, 340));
+  return users;
+}
+
 function extractTalkerContextEntries(raw) {
   const stripped = stripSystemWrappers(raw);
   const blocks = Array.from(stripped.matchAll(/<talker_agent_context>([\s\S]*?)<\/talker_agent_context>/gi));
@@ -135,9 +151,8 @@ function mergeTalkerEntries(entries) {
     return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
   }
 
-  const lastItem = mergedItems[mergedItems.length - 1];
-  const lastComplete = [...mergedItems].reverse().find((it) => it.complete);
-  const chosen = lastItem.complete ? lastItem : (lastComplete || lastItem);
+  // Luôn lấy lượt talker mới nhất, tuyệt đối không lùi về lượt cũ khi câu mới bị cắt ngang.
+  const chosen = mergedItems[mergedItems.length - 1];
   return {
     liveTalkerTime: chosen.ts,
     liveTalkerText: chosen.text.slice(0, 340),
@@ -240,6 +255,7 @@ function updateState(payload) {
     liveTalkerComplete: false,
     liveTalkerUpdatedAt: 0,
     recentTalkerEntries: [],
+    recentUserTexts: [],
     terminationReason: '',
     fullyIdle: true,
     sessionStartedAt: now,
@@ -260,6 +276,14 @@ function updateState(payload) {
 
   if (typeof payload.lastUserInput === 'string' && payload.lastUserInput.trim()) {
     next.lastPromptPreview = cleanUserInputPreview(payload.lastUserInput).slice(0, 240);
+    const incomingUsers = extractUserContextEntries(payload.lastUserInput);
+    if (incomingUsers.length > 0) {
+      const mergedUsers = Array.isArray(prev.recentUserTexts) ? [...prev.recentUserTexts] : [];
+      for (const u of incomingUsers) {
+        if (u && !mergedUsers.includes(u)) mergedUsers.push(u);
+      }
+      next.recentUserTexts = mergedUsers.slice(-10);
+    }
     const incomingTalker = extractTalkerContextEntries(payload.lastUserInput);
     if (incomingTalker.length > 0) {
       const mergedList = Array.isArray(prev.recentTalkerEntries) ? [...prev.recentTalkerEntries] : [];
@@ -280,14 +304,14 @@ function updateState(payload) {
       next.recentTalkerEntries = mergedList.slice(-MAX_RECENT_TALKER);
       const talkerSummary = mergeTalkerEntries(next.recentTalkerEntries);
       if (talkerSummary.liveTalkerText) {
-        const changed =
-          talkerSummary.liveTalkerText !== prev.liveTalkerText ||
-          talkerSummary.liveTalkerTime !== prev.liveTalkerTime ||
-          Boolean(talkerSummary.liveTalkerComplete) !== Boolean(prev.liveTalkerComplete);
+        const isNewStamp = talkerSummary.liveTalkerTime && talkerSummary.liveTalkerTime !== prev.liveTalkerTime;
+        const isSameStampLonger =
+          talkerSummary.liveTalkerTime === prev.liveTalkerTime &&
+          talkerSummary.liveTalkerText.length > String(prev.liveTalkerText || '').length;
         next.liveTalkerText = talkerSummary.liveTalkerText;
         next.liveTalkerTime = talkerSummary.liveTalkerTime;
         next.liveTalkerComplete = Boolean(talkerSummary.liveTalkerComplete);
-        if (changed || !prev.liveTalkerUpdatedAt) {
+        if (isNewStamp || isSameStampLonger || !prev.liveTalkerUpdatedAt) {
           next.liveTalkerUpdatedAt = now;
         }
       }

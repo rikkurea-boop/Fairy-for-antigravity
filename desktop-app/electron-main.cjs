@@ -107,8 +107,6 @@ let latestHookEntry = null;
 let liveUiaSubtitle = null;
 let uiaPollTimer = null;
 let uiaPollInFlight = false;
-let uiaCandidateText = '';
-let uiaCandidateSince = 0;
 let uiaCommittedText = '';
 let uiaSubSeq = 0;
 
@@ -210,6 +208,12 @@ function handleHookPushRequest(req, res) {
       const entry = parsed?.entry && typeof parsed.entry === 'object' ? parsed.entry : parsed;
       const convId = String(parsed?.conversationId || entry?.conversationId || '').trim();
       if (convId && entry) {
+        if (Array.isArray(entry.recentUserTexts)) {
+          registerKnownUserSpeech(entry.recentUserTexts);
+        }
+        if (typeof entry.lastPromptPreview === 'string' && entry.lastPromptPreview.trim()) {
+          registerKnownUserSpeech(entry.lastPromptPreview);
+        }
         latestHookEntry = {
           ...entry,
           conversationId: convId,
@@ -307,12 +311,98 @@ function computeEffectiveMood(entry, now) {
   return raw;
 }
 
+const B_L = '(?:^|[\\s,.;:!?("“-])';
+const B_R = '(?=$|[\\s,.;:!?)”"-])';
+const USER_SPEECH_FILTER_RE = new RegExp(
+  '(\\?\\s*$|' +
+  B_L + '(?:' +
+    'giúp\\s+tôi|cho\\s+tôi|của\\s+tôi|của\\s+mình|ý\\s+tôi|nhưng\\s+mà|nếu\\s+mà|với\\s+cả|à\\s+trước|trước\\s+tôi|' +
+    'gửi\\s+bạn|gửi\\s+cho\\s+bạn|hãy\\s+kiểm\\s+tra|cho\\s+thấy\\s+(?:fairy|ferry)|ferry\\s+vẫn|khá\\s+là\\s+ngắt|kiểu\\s+nó\\s+bị|' +
+    'tôi\\s+(?:muốn|thấy|cảm\\s+giác|nghĩ|đang\\s+nghĩ|đang\\s+thử|đang\\s+test|đang\\s+thắc\\s+mắc|đang\\s+bị|không\\s+thấy|không\\s+nghĩ|không\\s+nghe|có\\s+gửi|vừa\\s+gửi|chỉ\\s+cần|nhớ\\s+là|bảo\\s+là|cam\\s+kết|test\\s+thử)|' +
+    'bạn\\s+(?:thử|hãy|làm|xóa|tìm|kiểm\\s+tra|đã\\s+tìm|đã\\s+có)|' +
+    'fairy\\s+(?:nó|bị|chưa|còn|mới\\s+chỉ|vừa\\s+mới|nãy|vẫn\\s+(?:bị|không|chưa|đang\\s+bị))|' +
+    'được\\s+không|đúng\\s+không|phải\\s+không|có\\s+thể\\s+dùng\\s+cái\\s+này\\s+không|nhé|nhỉ' +
+  ')' + B_R + ')',
+  'i'
+);
+const AI_SPEECH_FILTER_RE = new RegExp(
+  B_L + '(?:' +
+    'ngài|master|' +
+    'tôi\\s+(?:sẽ|đang|đã|xác\\s+nhận\\s+(?:chưa|không)|hiểu|rất\\s+vui|ghi\\s+nhận|tìm\\s+thấy|không\\s+thể|không\\s+hỗ\\s+trợ|cần\\s+đính\\s+chính|cần\\s+hướng\\s+dẫn|đề\\s+xuất|dự\\s+định|khuyến\\s+nghị|can\\s+thiệp)|' +
+    'để\\s+(?:tôi|fairy|giúp|giấu|xử\\s+lý|đổi|ưu\\s+tiên|đảm\\s+bảo|giữ|bỏ|chặn|kiểm\\s+tra)|' +
+    'chính\\s+xác|chắc\\s+chắn\\s+rồi|hệ\\s+thống\\s+(?:đã|hiện|sẽ)|luồng\\s+ipc|toàn\\s+bộ\\s+(?:dự\\s+án|cấu\\s+hình|luồng|đường\\s+ống)|với\\s+cấu\\s+hình|' +
+    'bạn\\s+hoàn\\s+toàn\\s+có\\s+thể|bạn\\s+có\\s+thể\\s+sử\\s+dụng\\s+các\\s+công\\s+cụ|' +
+    'việc\\s+(?:tra\\s+cứu|tắt\\s+tiếng)|không\\s+(?:thể\\s+can\\s+thiệp|phải\\s+lọc)|antigravity\\s+vẫn\\s+phát|dùng\\s+giọng\\s+antigravity' +
+  ')' + B_R,
+  'i'
+);
+const MASTER_ADDRESS_RE = new RegExp(B_L + '(?:ngài|master)' + B_R, 'i');
+
+function normalizeSpeechKey(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+const knownUserNorms = new Set();
+function registerKnownUserSpeech(textOrList) {
+  const arr = Array.isArray(textOrList) ? textOrList : [textOrList];
+  for (const raw of arr) {
+    const norm = normalizeSpeechKey(raw);
+    if (!norm || norm.length < 4) continue;
+    knownUserNorms.add(norm);
+    if (knownUserNorms.size > 160) {
+      const oldest = knownUserNorms.values().next().value;
+      if (oldest !== undefined) knownUserNorms.delete(oldest);
+    }
+  }
+}
+
+function isKnownUserSpeech(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  if (MASTER_ADDRESS_RE.test(s)) return false;
+  const norm = normalizeSpeechKey(s);
+  if (!norm) return false;
+  if (knownUserNorms.has(norm)) return true;
+  if (norm.length >= 14) {
+    for (const u of knownUserNorms) {
+      if (u.length >= 14 && (u.includes(norm) || norm.includes(u))) return true;
+    }
+  }
+  return false;
+}
+
+function isAssistantVoiceSubtitle(text) {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  if (isKnownUserSpeech(s)) return false;
+  const hasMaster = MASTER_ADDRESS_RE.test(s);
+  if (USER_SPEECH_FILTER_RE.test(s) && !hasMaster) return false;
+  return AI_SPEECH_FILTER_RE.test(s);
+}
+
 const dialogueCache = new Map();
 function stripSystemWrappers(raw) {
   return String(raw || '')
     .replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, ' ')
     .replace(/<voice_instructions>[\s\S]*?<\/voice_instructions>/gi, ' ')
     .replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, ' ');
+}
+
+function extractUserLinesFromUserContent(raw) {
+  const s = stripSystemWrappers(raw);
+  const blocks = Array.from(s.matchAll(/<talker_agent_context>([\s\S]*?)<\/talker_agent_context>/gi));
+  const items = [];
+  for (const block of blocks) {
+    const body = block[1] || '';
+    for (const hit of body.matchAll(/^\[[^\]]+\]\s*user:\s*"([^"]+)"/gm)) {
+      const text = String(hit[1] || '').replace(/\s+/g, ' ').trim();
+      if (text) items.push(text.slice(0, 340));
+    }
+  }
+  return items;
 }
 
 function extractTalkerEntriesFromUserContent(raw) {
@@ -392,9 +482,8 @@ function mergeLatestCompleteTalker(talkerListsNewestFirst) {
   }
   if (!mergedItems.length) return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
 
-  const lastItem = mergedItems[mergedItems.length - 1];
-  const lastComplete = [...mergedItems].reverse().find((it) => it.complete);
-  const chosen = lastItem.complete ? lastItem : (lastComplete || lastItem);
+  // Luôn lấy lượt talker mới nhất, tuyệt đối không lùi về lượt cũ khi câu mới bị cắt ngang.
+  const chosen = mergedItems[mergedItems.length - 1];
   return {
     liveTalkerTime: chosen.ts,
     liveTalkerText: chosen.text.slice(0, 340),
@@ -443,6 +532,7 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
       let modelRawText = '';
       let hasStepError = false;
       const recentTalkerLists = [];
+      const recentUserTexts = [];
       for (let i = lines.length - 1; i >= 0; i -= 1) {
         try {
           const item = JSON.parse(lines[i]);
@@ -451,8 +541,13 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
             modelText = item.content.replace(/\s+/g, ' ').trim().slice(0, 500);
           }
           if (item.type === 'USER_INPUT' && typeof item.content === 'string' && item.content.trim()) {
-            if (!userText) {
-              userText = cleanUserTranscriptText(item.content).slice(0, 500);
+            const cleanU = cleanUserTranscriptText(item.content).slice(0, 500);
+            if (!userText) userText = cleanU;
+            if (recentUserTexts.length < 12) {
+              if (cleanU) recentUserTexts.push(cleanU);
+              for (const u of extractUserLinesFromUserContent(item.content)) {
+                if (u && recentUserTexts.length < 12) recentUserTexts.push(u);
+              }
             }
             if (recentTalkerLists.length < 4) {
               const entries = extractTalkerEntriesFromUserContent(item.content);
@@ -467,15 +562,16 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
           // Skip partial boundary line.
         }
       }
+      registerKnownUserSpeech(recentUserTexts);
       const { liveTalkerText, liveTalkerTime, liveTalkerComplete } = mergeLatestCompleteTalker(recentTalkerLists);
-      const data = { userText, modelText, modelRawText, liveTalkerText, liveTalkerTime, liveTalkerComplete, hasStepError, mtimeMs };
+      const data = { userText, modelText, modelRawText, liveTalkerText, liveTalkerTime, liveTalkerComplete, recentUserTexts, hasStepError, mtimeMs };
       dialogueCache.set(logPath, { key: cacheKey, data });
       return data;
     } catch {
       // Try next candidate.
     }
   }
-  return { userText: '', modelText: '', modelRawText: '', liveTalkerText: '', liveTalkerTime: '', liveTalkerComplete: false, hasStepError: false, mtimeMs: 0 };
+  return { userText: '', modelText: '', modelRawText: '', liveTalkerText: '', liveTalkerTime: '', liveTalkerComplete: false, recentUserTexts: [], hasStepError: false, mtimeMs: 0 };
 }
 
 const SLEEP_RE = /(\b(đi ngủ|ngủ ngon|ngủ đây|good\s*night|ngủ thôi)\b|buồn ngủ|thức khuya quá)/i;
@@ -511,31 +607,23 @@ function parseVoiceChatFile(filePath, now = Date.now(), maxStaleMs = Infinity) {
 
     let lastVoiceLine = null;
     let ownerChat = lastChat;
-    for (let c = chats.length - 1; c >= 0 && !lastVoiceLine; c -= 1) {
+    const recentUserTexts = [];
+    for (let c = chats.length - 1; c >= 0; c -= 1) {
       const chat = chats[c];
       const lines = Array.isArray(chat?.lines) ? chat.lines : [];
       for (let i = lines.length - 1; i >= 0; i -= 1) {
         const item = lines[i];
-        if (item && item.role === 'ROLE_VOICE' && typeof item.text === 'string' && item.text.trim()) {
+        if (!item || typeof item.text !== 'string' || !item.text.trim()) continue;
+        if (!lastVoiceLine && item.role === 'ROLE_VOICE') {
           lastVoiceLine = item;
           ownerChat = chat;
-          break;
+        } else if (item.role === 'ROLE_USER' && recentUserTexts.length < 16) {
+          recentUserTexts.push(item.text.trim().slice(0, 340));
         }
       }
+      if (lastVoiceLine && recentUserTexts.length >= 16) break;
     }
-    if (!lastVoiceLine) {
-      for (let c = chats.length - 1; c >= 0 && !lastVoiceLine; c -= 1) {
-        const chat = chats[c];
-        const lines = Array.isArray(chat?.lines) ? chat.lines : [];
-        for (let i = lines.length - 1; i >= 0; i -= 1) {
-          if (lines[i] && typeof lines[i].text === 'string' && lines[i].text.trim()) {
-            lastVoiceLine = lines[i];
-            ownerChat = chat;
-            break;
-          }
-        }
-      }
-    }
+    registerKnownUserSpeech(recentUserTexts);
 
     const startedAtMs = lastChat.startedAt ? Date.parse(lastChat.startedAt) || 0 : 0;
     const stoppedAtMs = lastChat.stoppedAt ? Date.parse(lastChat.stoppedAt) || 0 : 0;
@@ -551,6 +639,7 @@ function parseVoiceChatFile(filePath, now = Date.now(), maxStaleMs = Infinity) {
       voiceSessionEnded,
       lastVoiceText,
       lastVoiceTime,
+      recentUserTexts,
       summary: String(lastChat.summary || '').trim(),
       mtimeMs: st.mtimeMs,
     };
@@ -907,6 +996,12 @@ function readSnapshot() {
       : Boolean(dialogue.liveTalkerComplete);
 
   const effectiveUserText = dialogue.userText || entry.lastPromptPreview || '';
+  if (Array.isArray(entry.recentUserTexts)) {
+    registerKnownUserSpeech(entry.recentUserTexts);
+  }
+  if (effectiveUserText) {
+    registerKnownUserSpeech(effectiveUserText);
+  }
   const hookAssistantText =
     entry.lastAssistantText && Number(entry.lastAssistantUpdatedAt || 0) >= (dialogue.mtimeMs || 0) - 2000
       ? String(entry.lastAssistantText)
@@ -1677,24 +1772,39 @@ const spokenStateByConv = new Map();
 let voiceDebounceTimer = null;
 let stopDebounceTimer = null;
 
-let lastGlobalVoiceNorm = '';
-let lastGlobalVoiceAt = 0;
 const spokenVoiceKeys = new Set();
+const spokenVoiceNorms = new Set();
 
 function markSpokenVoiceKey(key) {
   if (!key) return;
   spokenVoiceKeys.add(key);
-  if (spokenVoiceKeys.size > 60) {
+  if (spokenVoiceKeys.size > 120) {
     const oldest = spokenVoiceKeys.values().next().value;
     if (oldest !== undefined) spokenVoiceKeys.delete(oldest);
   }
 }
 
-function normalizeSpeechKey(text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
+function markSpokenVoiceNorm(text) {
+  const norm = normalizeSpeechKey(text);
+  if (!norm || norm.length < 4) return;
+  spokenVoiceNorms.add(norm);
+  if (spokenVoiceNorms.size > 150) {
+    const oldest = spokenVoiceNorms.values().next().value;
+    if (oldest !== undefined) spokenVoiceNorms.delete(oldest);
+  }
+}
+
+function isAlreadySpokenNorm(norm) {
+  if (!norm) return false;
+  if (spokenVoiceNorms.has(norm)) return true;
+  if (norm.length >= 14) {
+    for (const prev of spokenVoiceNorms) {
+      if (prev.length >= 14 && (prev.includes(norm) || prev.startsWith(norm))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function getConvSpokenState(convId) {
@@ -1704,8 +1814,6 @@ function getConvSpokenState(convId) {
       lastVoiceKey: '',
       lastStopKey: '',
       lastText: '',
-      lastVoiceNorm: '',
-      lastVoiceAt: 0,
       incompletePrefix: '',
     });
   }
@@ -1891,7 +1999,9 @@ function getVoiceCandidate(snap) {
 
 function getStopCandidate(snap) {
   if (!snap || (snap.lastEvent !== 'Stop' && snap.mood !== 'done')) return { key: '', text: '' };
-  const text = snap.lastReplySpeech || cleanTextForSpeech(snap.dialogueQuip || '');
+  const quip = String(snap.dialogueQuip || '').trim();
+  const safeQuip = quip.startsWith('🎙️') ? '' : cleanTextForSpeech(quip);
+  const text = snap.lastReplySpeech || safeQuip;
   if (!text) return { key: '', text: '' };
   const stamp = snap.doneAt || snap.updatedAt || '';
   return { key: `${snap.conversationId}:${stamp}:${text.slice(0, 60)}`, text };
@@ -1909,12 +2019,11 @@ function scheduleSpeechFromSnapshot(snap) {
     markSpokenVoiceKey(voiceInit.key);
     convState.lastStopKey = stopInit.key;
     convState.lastText = voiceInit.text || stopInit.text || '';
-    if (voiceInit.text) {
-      convState.lastVoiceNorm = normalizeSpeechKey(voiceInit.text);
-      convState.lastVoiceAt = Date.now();
-      lastGlobalVoiceNorm = convState.lastVoiceNorm;
-      lastGlobalVoiceAt = convState.lastVoiceAt;
-    }
+    markSpokenVoiceNorm(voiceInit.text);
+    markSpokenVoiceNorm(voiceInit.rawText);
+    markSpokenVoiceNorm(snap.liveTalkerText);
+    markSpokenVoiceNorm(snap.lastVoiceText);
+    markSpokenVoiceNorm(stopInit.text);
     return;
   }
   if (!ttsEnabled || IS_SMOKE_TEST) return;
@@ -1937,22 +2046,22 @@ function scheduleSpeechFromSnapshot(snap) {
       }
       st.incompletePrefix = cand.complete ? '' : cand.rawText;
 
+      if (isKnownUserSpeech(toSpeak) || isKnownUserSpeech(cand.rawText)) {
+        return;
+      }
+
       const norm = normalizeSpeechKey(toSpeak);
-      const now = Date.now();
-      const dupVoiceLocal = norm && norm === st.lastVoiceNorm && now - (st.lastVoiceAt || 0) < 25000;
-      const dupVoiceGlobal = norm && norm === lastGlobalVoiceNorm && now - lastGlobalVoiceAt < 25000;
+      const rawNorm = normalizeSpeechKey(cand.rawText);
+      const alreadySpoken = Boolean(isAlreadySpokenNorm(norm) || (toSpeak === cand.text && isAlreadySpokenNorm(rawNorm)));
       if (
         toSpeak &&
         toSpeak.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 4 &&
         toSpeak !== st.lastText &&
-        !dupVoiceLocal &&
-        !dupVoiceGlobal
+        !alreadySpoken
       ) {
         st.lastText = toSpeak;
-        st.lastVoiceNorm = norm;
-        st.lastVoiceAt = now;
-        lastGlobalVoiceNorm = norm;
-        lastGlobalVoiceAt = now;
+        markSpokenVoiceNorm(toSpeak);
+        markSpokenVoiceNorm(cand.rawText);
         enqueueFairySpeech(toSpeak).catch(() => {});
       }
     }, delayMs);
@@ -2005,10 +2114,8 @@ async function pollLiveVoiceSubtitle() {
     if (!res || !res.ok) {
       nextDelay = res?.error === 'window_not_found' ? 2000 : 1000;
     } else if (!res.voiceOpen) {
+      // Giữ nguyên uiaCommittedText khi đóng hộp Voice Mode để không đọc lặp lại câu cũ.
       const wasOpen = Boolean(liveUiaSubtitle?.voiceOpen);
-      uiaCandidateText = '';
-      uiaCandidateSince = 0;
-      uiaCommittedText = '';
       if (wasOpen) {
         liveUiaSubtitle = null;
         pushStateToRenderer();
@@ -2033,13 +2140,8 @@ async function pollLiveVoiceSubtitle() {
       }
 
       if (rawSub && rawSub !== uiaCommittedText) {
-        if (rawSub !== uiaCandidateText) {
-          uiaCandidateText = rawSub;
-          uiaCandidateSince = now;
-        }
         const endsSentence = /[.!?…]["”']?\s*$/.test(rawSub);
-        const heldMs = now - uiaCandidateSince;
-        if (endsSentence || heldMs >= 650) {
+        if (endsSentence) {
           let deltaText = rawSub;
           if (uiaCommittedText.length >= 10 && rawSub.startsWith(uiaCommittedText)) {
             const suffix = rawSub.slice(uiaCommittedText.length).trim();
@@ -2048,18 +2150,29 @@ async function pollLiveVoiceSubtitle() {
             }
           }
           uiaCommittedText = rawSub;
-          uiaSubSeq += 1;
-          liveUiaSubtitle = {
-            seq: uiaSubSeq,
-            voiceOpen: true,
-            text: deltaText,
-            fullText: rawSub,
-            timer: String(res.timer || ''),
-            updatedAt: now,
-            lastSeenAt: now,
-            complete: true,
-          };
-          pushStateToRenderer();
+
+          const isUserLine =
+            isKnownUserSpeech(rawSub) ||
+            isKnownUserSpeech(deltaText) ||
+            USER_SPEECH_FILTER_RE.test(deltaText) && !MASTER_ADDRESS_RE.test(deltaText);
+          const isAiLine =
+            !isUserLine &&
+            (isAssistantVoiceSubtitle(deltaText) || isAssistantVoiceSubtitle(rawSub));
+
+          if (isAiLine) {
+            uiaSubSeq += 1;
+            liveUiaSubtitle = {
+              seq: uiaSubSeq,
+              voiceOpen: true,
+              text: deltaText,
+              fullText: rawSub,
+              timer: String(res.timer || ''),
+              updatedAt: now,
+              lastSeenAt: now,
+              complete: true,
+            };
+            pushStateToRenderer();
+          }
         }
       }
     }

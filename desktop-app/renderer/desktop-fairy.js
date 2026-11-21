@@ -320,11 +320,21 @@
     rafId = requestAnimationFrame(tick);
   }
 
-  // Thu hẹp vùng cửa sổ overlay (Windows) chỉ còn quanh mắt + bubble kể cả khi nhấn giữ/kéo,
-  // và tắt focusable khi không nhập liệu để tránh cướp focus làm đen video phần cứng Chrome/YouTube.
-  let lastShapeKey = '';
+  // Chế độ dock dùng cửa sổ OS nhỏ gọn di chuyển trực tiếp theo tọa độ màn hình (không SetWindowRgn)
+  // để tránh phủ HWND 2560x1440 lên YouTube và loại bỏ triệt để viền cắt vuông quanh quầng sáng.
+  let displayBounds = {
+    x: Number(window.screen.availLeft) || 0,
+    y: 0,
+    width: Number(window.screen.width) || 1920,
+    height: Number(window.screen.height) || 1080,
+  };
+  const DOCK_SIZE = 128;
+  const EYE_MARGIN = 130; // Cửa sổ dock 260x260: dư >30px biên alpha=0 ngoài quầng sáng
+  let dockScreenPos = null;
+  let lastWindowLayout = { x: 0, y: 0, width: displayBounds.width, height: displayBounds.height, coreX: 130, coreY: 130, flip: false, fullscreen: true };
   let lastFocusable = null;
   let chatInputActive = false;
+
   function syncWindowFocusability() {
     if (!window.fairyDesktop || !window.fairyDesktop.setFocusable) return;
     const needKeyboard =
@@ -334,33 +344,6 @@
     lastFocusable = needKeyboard;
     window.fairyDesktop.setFocusable(needKeyboard);
   }
-
-  function syncWindowShape() {
-    syncWindowFocusability();
-    if (!window.fairyDesktop || !window.fairyDesktop.setShape) return;
-    let rects = null; // null = toàn màn hình (boot, greet, cài đặt)
-    if (phase === 'dock' && settingsModal.classList.contains('hidden')) {
-      rects = [];
-      const pad = dragState ? 220 : 10;
-      const els = [coreEl];
-      if (!bubbleEl.classList.contains('hidden')) els.push(bubbleEl);
-      for (const el of els) {
-        const r = el.getBoundingClientRect();
-        if (r.width < 1 || r.height < 1) continue;
-        const x = Math.max(0, Math.floor(r.left - pad));
-        const y = Math.max(0, Math.floor(r.top - pad));
-        const w = Math.min(window.innerWidth, Math.ceil(r.right + pad)) - x;
-        const h = Math.min(window.innerHeight, Math.ceil(r.bottom + pad)) - y;
-        if (w > 0 && h > 0) rects.push({ x, y, width: w, height: h });
-      }
-      if (!rects.length) rects = null;
-    }
-    const key = JSON.stringify(rects);
-    if (key === lastShapeKey) return;
-    lastShapeKey = key;
-    window.fairyDesktop.setShape(rects);
-  }
-  setInterval(syncWindowShape, 90);
 
   // ---------- Dual Glitch System (`threads` + `blocks`) & Flicker ----------
   const randomBetween = (min, max) => min + Math.random() * (max - min);
@@ -651,44 +634,134 @@
     if (phase === 'dock' && !dragState && settingsModal.classList.contains('hidden')) setIgnoreMouse(true);
   });
 
-  // ---------- Positioning & Bubble ----------
-  function clampPos(x, y) {
-    const size = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fz3-dock-size')) || 128;
-    const half = size / 2 + 8;
+  // ---------- Positioning & Bubble (Screen Coordinates -> Compact Native Window) ----------
+  function defaultDockScreenPos() {
     return {
-      x: Math.round(Math.min(Math.max(Number(x) || 0, half), window.innerWidth - half)),
-      y: Math.round(Math.min(Math.max(Number(y) || 0, half), window.innerHeight - half)),
+      x: Math.round(displayBounds.x + displayBounds.width * 0.25),
+      y: Math.round(displayBounds.y + displayBounds.height * 0.52),
     };
   }
 
-  function applyDockPos(pos) {
-    const root = document.documentElement;
-    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
-      const p = clampPos(pos.x, pos.y);
-      root.style.setProperty('--fz3-dock-x', `${p.x}px`);
-      root.style.setProperty('--fz3-dock-y', `${p.y}px`);
-    } else {
-      root.style.setProperty('--fz3-dock-x', '25vw');
-      root.style.setProperty('--fz3-dock-y', '52vh');
-    }
+  function clampPos(x, y) {
+    const half = DOCK_SIZE / 2 + 10;
+    const minX = displayBounds.x + half;
+    const maxX = displayBounds.x + Math.max(half, displayBounds.width - half);
+    const minY = displayBounds.y + half;
+    const maxY = displayBounds.y + Math.max(half, displayBounds.height - half);
+    return {
+      x: Math.round(Math.min(Math.max(Number(x) || 0, minX), maxX)),
+      y: Math.round(Math.min(Math.max(Number(y) || 0, minY), maxY)),
+    };
   }
 
-  function placeBubble() {
+  function ensureDockScreenPos() {
+    if (!dockScreenPos) {
+      const base = customPos && Number.isFinite(customPos.x) && Number.isFinite(customPos.y)
+        ? customPos
+        : defaultDockScreenPos();
+      dockScreenPos = clampPos(base.x, base.y);
+    } else {
+      dockScreenPos = clampPos(dockScreenPos.x, dockScreenPos.y);
+    }
+    return dockScreenPos;
+  }
+
+  function setCoreCssPos(localX, localY) {
+    const root = document.documentElement;
+    root.style.setProperty('--fz3-dock-x', `${Math.round(localX)}px`);
+    root.style.setProperty('--fz3-dock-y', `${Math.round(localY)}px`);
+  }
+
+  function placeBubble(localCx = lastWindowLayout.coreX, localCy = lastWindowLayout.coreY, areaW = lastWindowLayout.width, areaH = lastWindowLayout.height, forcedFlip = lastWindowLayout.flip) {
     if (bubbleEl.classList.contains('hidden')) return;
-    const rect = coreEl.getBoundingClientRect();
     const W = Math.max(268, bubbleEl.offsetWidth || 304);
-    const H = bubbleEl.offsetHeight || 190;
+    const H = Math.max(80, bubbleEl.offsetHeight || 190);
+    const halfEye = DOCK_SIZE / 2;
     const gap = 16;
     const margin = 12;
-    const flip = rect.right + gap + W > window.innerWidth - margin;
-    const rawX = flip ? rect.left - gap - W : rect.right + gap;
-    const x = Math.round(Math.min(Math.max(rawX, margin), Math.max(margin, window.innerWidth - W - margin)));
-    const y = Math.round(
-      Math.min(Math.max(rect.top + rect.height / 2, H / 2 + 10), Math.max(H / 2 + 10, window.innerHeight - H / 2 - 10)),
-    );
+    const flip = typeof forcedFlip === 'boolean'
+      ? forcedFlip
+      : (localCx + halfEye + gap + W > areaW - margin);
+    const rawX = flip ? localCx - halfEye - gap - W : localCx + halfEye + gap;
+    const x = Math.round(Math.min(Math.max(rawX, margin), Math.max(margin, areaW - W - margin)));
+    const minCy = Math.min(Math.round(H / 2 + 10), Math.round(areaH / 2));
+    const maxCy = Math.max(minCy, areaH - Math.round(H / 2 + 10));
+    const y = Math.round(Math.min(Math.max(localCy, minCy), maxCy));
     bubbleEl.style.left = `${x}px`;
     bubbleEl.style.top = `${y}px`;
     bubbleEl.dataset.side = flip ? 'left' : 'right';
+  }
+
+  function syncWindowLayout() {
+    syncWindowFocusability();
+    const pos = ensureDockScreenPos();
+    const wantFullscreen = phase === 'boot' || phase === 'greet' || !settingsModal.classList.contains('hidden');
+    if (wantFullscreen) {
+      const localX = pos.x - displayBounds.x;
+      const localY = pos.y - displayBounds.y;
+      lastWindowLayout = {
+        x: displayBounds.x,
+        y: displayBounds.y,
+        width: displayBounds.width,
+        height: displayBounds.height,
+        coreX: localX,
+        coreY: localY,
+        flip: (localX + DOCK_SIZE / 2 + 16 + Math.max(268, bubbleEl.offsetWidth || 304) + 12) > displayBounds.width,
+        fullscreen: true,
+      };
+      setCoreCssPos(localX, localY);
+      if (window.fairyDesktop && window.fairyDesktop.setWindowRect) {
+        window.fairyDesktop.setWindowRect({ fullscreen: true });
+      }
+      placeBubble(localX, localY, displayBounds.width, displayBounds.height, lastWindowLayout.flip);
+      return;
+    }
+
+    const bubbleOpen = !bubbleEl.classList.contains('hidden');
+    let winW = EYE_MARGIN * 2;
+    let winH = EYE_MARGIN * 2;
+    let rawWinX = pos.x - EYE_MARGIN;
+    let rawWinY = pos.y - EYE_MARGIN;
+    let flip = false;
+
+    if (bubbleOpen) {
+      const bubbleW = Math.max(268, bubbleEl.offsetWidth || 304);
+      const bubbleH = Math.max(120, bubbleEl.offsetHeight || 240);
+      const gap = 16;
+      const bubbleEdgePad = 24;
+      const samePad = DOCK_SIZE / 2 + gap + bubbleW + bubbleEdgePad;
+      const oppPad = EYE_MARGIN;
+      flip = (pos.x + samePad) > (displayBounds.x + displayBounds.width);
+      winW = Math.min(displayBounds.width, oppPad + samePad);
+      winH = Math.min(displayBounds.height, Math.max(EYE_MARGIN * 2, bubbleH + 56));
+      rawWinX = flip ? (pos.x - samePad) : (pos.x - oppPad);
+      rawWinY = pos.y - Math.round(winH / 2);
+    }
+
+    const maxWinX = displayBounds.x + Math.max(0, displayBounds.width - winW);
+    const maxWinY = displayBounds.y + Math.max(0, displayBounds.height - winH);
+    const winX = Math.round(Math.min(Math.max(rawWinX, displayBounds.x), maxWinX));
+    const winY = Math.round(Math.min(Math.max(rawWinY, displayBounds.y), maxWinY));
+    const localCx = pos.x - winX;
+    const localCy = pos.y - winY;
+
+    lastWindowLayout = { x: winX, y: winY, width: winW, height: winH, coreX: localCx, coreY: localCy, flip, fullscreen: false };
+    setCoreCssPos(localCx, localCy);
+    if (window.fairyDesktop && window.fairyDesktop.setWindowRect) {
+      window.fairyDesktop.setWindowRect({ x: winX, y: winY, width: winW, height: winH });
+    }
+    if (bubbleOpen) {
+      placeBubble(localCx, localCy, winW, winH, flip);
+    }
+  }
+
+  function applyDockPos(pos) {
+    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+      dockScreenPos = clampPos(pos.x, pos.y);
+    } else {
+      dockScreenPos = defaultDockScreenPos();
+    }
+    syncWindowLayout();
   }
 
   let turnBubbleTimer = null;
@@ -710,8 +783,7 @@
     }
     bubbleEl.classList.remove('hidden');
     renderBubble();
-    placeBubble();
-    syncWindowShape();
+    syncWindowLayout();
     const closeDelay = autoCloseMs > 0 ? autoCloseMs : (mode === 'turn' ? 10000 : mode === 'toast' ? 4500 : 0);
     if (closeDelay > 0) {
       turnBubbleTimer = setTimeout(() => {
@@ -724,7 +796,7 @@
     clearTimeout(turnBubbleTimer);
     chatInputActive = false;
     bubbleEl.classList.add('hidden');
-    syncWindowShape();
+    syncWindowLayout();
     if (phase === 'dock') setIgnoreMouse(true);
   }
 
@@ -748,9 +820,9 @@
 
   function greetingByTime() {
     const slot = greetSlotByTime();
-    if (slot === 'morning') return 'Chào buổi sáng, Master. Khẳng định: Fairy đã sẵn sàng. Mọi chỉ số: ổn định.';
+    if (slot === 'morning') return 'Chào buổi sáng, Master. Khẳng định: Fairy đã sẵn sàng. Mọi chỉ số: hoàn hảo.';
     if (slot === 'noon') return 'Đã đến trưa rồi, Master. Khẳng định: nhịp độ tác vụ đang được tôi kiểm soát.';
-    if (slot === 'afternoon') return 'Chào buổi chiều, Master. Khẳng định: Fairy đã sẵn sàng. Mọi chỉ số: ổn định.';
+    if (slot === 'afternoon') return 'Chào buổi chiều, Master. Khẳng định: Fairy đã sẵn sàng. Mọi chỉ số: hoàn hảo.';
     if (slot === 'evening') return 'Buổi tối tốt lành, Master. Khẳng định: liên kết đang ổn định tuyệt đối.';
     return 'Cảnh báo: đã qua nửa đêm, Master. Kiến nghị: xong việc thì đi nghỉ sớm.';
   }
@@ -852,7 +924,7 @@
       scheduleFlickerLoop();
       setIgnoreMouse(true);
     }
-    syncWindowShape();
+    syncWindowLayout();
   }
 
   async function startBootPlayback() {
@@ -997,13 +1069,13 @@
     clearTimeout(singleClickTimer);
     if (dragState && dragState.timer) clearTimeout(dragState.timer);
 
-    const r = coreEl.getBoundingClientRect();
+    const pos = ensureDockScreenPos();
     const state = {
       id: e.pointerId,
-      dx: e.clientX - (r.left + r.width / 2),
-      dy: e.clientY - (r.top + r.height / 2),
-      sx: e.clientX,
-      sy: e.clientY,
+      dx: e.screenX - pos.x,
+      dy: e.screenY - pos.y,
+      sx: e.screenX,
+      sy: e.screenY,
       moved: false,
       holdUnlocked: false,
       timer: null,
@@ -1023,19 +1095,18 @@
   coreEl.addEventListener('pointermove', (e) => {
     if (!dragState || dragState.id !== e.pointerId) return;
     if (!dragState.holdUnlocked) {
-      if (Math.hypot(e.clientX - dragState.sx, e.clientY - dragState.sy) > 14) {
+      if (Math.hypot(e.screenX - dragState.sx, e.screenY - dragState.sy) > 14) {
         clearTimeout(dragState.timer);
       }
       return;
     }
     if (!prefs.drag) return;
     if (!dragState.moved) {
-      if (Math.abs(e.clientX - dragState.sx) < 3 && Math.abs(e.clientY - dragState.sy) < 3) return;
+      if (Math.abs(e.screenX - dragState.sx) < 3 && Math.abs(e.screenY - dragState.sy) < 3) return;
       dragState.moved = true;
     }
-    applyDockPos(clampPos(e.clientX - dragState.dx, e.clientY - dragState.dy));
-    placeBubble();
-    syncWindowShape();
+    dockScreenPos = clampPos(e.screenX - dragState.dx, e.screenY - dragState.dy);
+    syncWindowLayout();
   });
 
   function finishDrag(e) {
@@ -1046,17 +1117,15 @@
     layerEl.dataset.dragging = '0';
 
     if (e.type === 'pointercancel') {
-      syncWindowShape();
+      syncWindowLayout();
       updateMousePassthrough(e.clientX, e.clientY);
       return;
     }
 
     if (moved) {
-      const r = coreEl.getBoundingClientRect();
-      customPos = clampPos(r.left + r.width / 2, r.top + r.height / 2);
+      customPos = { x: dockScreenPos.x, y: dockScreenPos.y };
       writePref(KEYS.pos, customPos);
-      placeBubble();
-      syncWindowShape();
+      syncWindowLayout();
     } else if (!holdUnlocked) {
       const now = performance.now();
       if (now - lastShortClickAt <= DBL_CLICK_MS) {
@@ -1205,13 +1274,13 @@
     refreshStartupPref();
     settingsModal.classList.remove('hidden');
     setIgnoreMouse(false);
-    syncWindowShape();
+    syncWindowLayout();
   }
 
   function closeSettings() {
     settingsModal.classList.add('hidden');
     if (phase === 'dock') setIgnoreMouse(true);
-    syncWindowShape();
+    syncWindowLayout();
   }
 
   if ($('b-chat-input')) {
@@ -1313,9 +1382,9 @@
   $('btn-b-greet').addEventListener('click', () => setPhase('greet'));
   $('btn-b-reset').addEventListener('click', () => {
     customPos = null;
+    dockScreenPos = null;
     try { localStorage.removeItem(KEYS.pos); } catch {}
     applyDockPos(null);
-    setTimeout(placeBubble, 80);
   });
   $('btn-b-settings').addEventListener('click', openSettings);
   $('btn-close-settings').addEventListener('click', closeSettings);
@@ -1401,6 +1470,7 @@
   $('btn-s-reboot').addEventListener('click', () => setPhase('boot'));
   $('btn-s-resetpos').addEventListener('click', () => {
     customPos = null;
+    dockScreenPos = null;
     try { localStorage.removeItem(KEYS.pos); } catch {}
     applyDockPos(null);
   });
@@ -1408,9 +1478,20 @@
     if (window.fairyDesktop) window.fairyDesktop.quit();
   });
 
+  function refreshDisplayBounds() {
+    if (!window.fairyDesktop || !window.fairyDesktop.getDisplayBounds) return;
+    window.fairyDesktop.getDisplayBounds()
+      .then((b) => {
+        if (b && b.width > 0 && b.height > 0) {
+          displayBounds = b;
+          applyDockPos(customPos);
+        }
+      })
+      .catch(() => {});
+  }
+
   window.addEventListener('resize', () => {
-    if (customPos) applyDockPos(customPos);
-    placeBubble();
+    if (!bubbleEl.classList.contains('hidden')) placeBubble();
   });
 
   // ---------- Electron IPC ----------
@@ -1420,15 +1501,17 @@
       if (cmd === 'replay-boot') setPhase('boot');
       else if (cmd === 'replay-greet') setPhase('greet');
       else if (cmd === 'open-settings') openSettings();
+      else if (cmd === 'display-changed') refreshDisplayBounds();
       else if (cmd === 'reset-pos') {
         customPos = null;
+        dockScreenPos = null;
         try { localStorage.removeItem(KEYS.pos); } catch {}
         applyDockPos(null);
-        placeBubble();
       } else if (cmd === 'toggle-eye') {
         eyeHidden = !eyeHidden;
         if (eyeHidden) closeBubble();
         syncPrefsUI();
+        syncWindowLayout();
       } else if (cmd === 'toggle-bubble') {
         if (phase !== 'dock') setPhase('dock');
         if (bubbleEl.classList.contains('hidden')) openBubble('usage');
@@ -1436,6 +1519,7 @@
       }
     });
     window.fairyDesktop.getState().then(applyIncomingState).catch(() => {});
+    refreshDisplayBounds();
     refreshStartupPref();
   }
 

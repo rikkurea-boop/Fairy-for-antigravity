@@ -300,7 +300,7 @@ GREET_PACK_CLAUSES = {
     "greet-morning.wav": [
         "Chào buổi sáng, Master.",
         "Khẳng định: Fairy đã sẵn sàng.",
-        "Mọi chỉ số: ổn định.",
+        "Mọi chỉ số: hoàn hảo.",
     ],
     "greet-noon.wav": [
         "Đã đến trưa rồi, Master.",
@@ -309,7 +309,7 @@ GREET_PACK_CLAUSES = {
     "greet-afternoon.wav": [
         "Chào buổi chiều, Master.",
         "Khẳng định: Fairy đã sẵn sàng.",
-        "Mọi chỉ số: ổn định.",
+        "Mọi chỉ số: hoàn hảo.",
     ],
     "greet-evening.wav": [
         "Buổi tối tốt lành, Master.",
@@ -442,7 +442,7 @@ def main():
         clauses = [
             "Xin chào Master.",
             "Khẳng định: Fairy đã sẵn sàng.",
-            "Mọi chỉ số: ổn định.",
+            "Mọi chỉ số: hoàn hảo.",
         ]
         out_p = args.out or os.path.join(args.out_dir, "trucly_android_2lop.wav")
         render_with_locked_preset(synthesize_clauses(tts, voice_id, clauses), out_p)

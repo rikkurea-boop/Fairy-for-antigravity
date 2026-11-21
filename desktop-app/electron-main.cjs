@@ -46,9 +46,8 @@ if (IS_MAC && app.dock) {
 }
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-// Overlay phủ toàn màn hình + trong suốt: tắt GPU của Fairy để không tranh chấp
-// DirectComposition/overlay video với Chrome (nguyên nhân khả dĩ làm tab YouTube bị đen).
-if (process.env.FAIRY_GPU !== '1') {
+// Bật kết xuất GPU mặc định để cửa sổ trong suốt khử viền alpha mịn; chỉ tắt khi cần chẩn đoán.
+if (process.env.FAIRY_DISABLE_GPU === '1') {
   app.disableHardwareAcceleration();
 }
 
@@ -805,13 +804,54 @@ function applyAlwaysOnTop(win) {
     if (typeof win.setHiddenInMissionControl === 'function') {
       win.setHiddenInMissionControl(true);
     }
-  } else {
+    return;
+  }
+  if (overlayPhase === 'boot' || overlayPhase === 'greet') {
     win.setAlwaysOnTop(true, 'screen-saver', 1);
+    win.moveTop();
+  } else {
+    win.setAlwaysOnTop(true, 'normal');
   }
 }
 
 let overlayPhase = 'boot';
 let bootTopmostTimer = null;
+let lastWindowRectKey = '';
+let isFullscreenWindowMode = true;
+
+function applyWindowRect(rect) {
+  if (!mainWin || mainWin.isDestroyed() || IS_SMOKE_TEST) return;
+  if (IS_WIN) {
+    try {
+      mainWin.setShape([]);
+    } catch {}
+  }
+  const disp = screen.getPrimaryDisplay().bounds;
+  if (!rect || rect.fullscreen) {
+    isFullscreenWindowMode = true;
+    const key = `full:${disp.x},${disp.y},${disp.width},${disp.height}`;
+    if (key !== lastWindowRectKey) {
+      lastWindowRectKey = key;
+      mainWin.setBounds(disp);
+    }
+    applyAlwaysOnTop(mainWin);
+    return;
+  }
+  isFullscreenWindowMode = false;
+  const w = Math.max(80, Math.min(disp.width, Math.round(Number(rect.width) || 260)));
+  const h = Math.max(80, Math.min(disp.height, Math.round(Number(rect.height) || 260)));
+  const minX = disp.x;
+  const maxX = disp.x + Math.max(0, disp.width - w);
+  const minY = disp.y;
+  const maxY = disp.y + Math.max(0, disp.height - h);
+  const x = Math.round(Math.min(Math.max(Number(rect.x) || 0, minX), maxX));
+  const y = Math.round(Math.min(Math.max(Number(rect.y) || 0, minY), maxY));
+  const key = `${x},${y},${w},${h}`;
+  if (key !== lastWindowRectKey) {
+    lastWindowRectKey = key;
+    mainWin.setBounds({ x, y, width: w, height: h });
+  }
+}
 
 function updateBootTopmostLoop(nextPhase) {
   overlayPhase = nextPhase === 'boot' || nextPhase === 'greet' ? nextPhase : 'dock';
@@ -821,10 +861,7 @@ function updateBootTopmostLoop(nextPhase) {
   }
   if (!IS_WIN || IS_SMOKE_TEST || !mainWin || mainWin.isDestroyed()) return;
   if (overlayPhase === 'boot' || overlayPhase === 'greet') {
-    const bounds = screen.getPrimaryDisplay().bounds;
-    mainWin.setBounds(bounds);
-    mainWin.setAlwaysOnTop(true, 'screen-saver', 1);
-    mainWin.moveTop();
+    applyWindowRect({ fullscreen: true });
     bootTopmostTimer = setInterval(() => {
       if (!mainWin || mainWin.isDestroyed()) {
         clearInterval(bootTopmostTimer);
@@ -838,6 +875,11 @@ function updateBootTopmostLoop(nextPhase) {
         } catch {}
       }
     }, 250);
+  } else {
+    try {
+      mainWin.setShape([]);
+    } catch {}
+    applyAlwaysOnTop(mainWin);
   }
 }
 
@@ -903,8 +945,11 @@ function createOverlayWindow(port) {
 
   screen.on('display-metrics-changed', () => {
     if (!mainWin || mainWin.isDestroyed()) return;
-    const nextBounds = screen.getPrimaryDisplay().bounds;
-    mainWin.setBounds(nextBounds);
+    lastWindowRectKey = '';
+    if (isFullscreenWindowMode || overlayPhase === 'boot' || overlayPhase === 'greet') {
+      applyWindowRect({ fullscreen: true });
+    }
+    mainWin.webContents.send('fairy:cmd', 'display-changed');
   });
 
   mainWin.loadURL(`http://127.0.0.1:${port}/`);
@@ -952,18 +997,18 @@ app.on('activate', () => {
 
 ipcMain.on('fairy:set-ignore-mouse', (_ev, ignore) => {
   if (!mainWin || mainWin.isDestroyed()) return;
-  if (IS_WIN) {
-    // Luôn giữ setIgnoreMouseEvents(false) trên Windows để tránh bật WS_EX_LAYERED | WS_EX_TRANSPARENT;
-    // vùng ngoài mắt & bubble tự động xuyên chuột hoàn toàn qua SetWindowRgn (setShape).
-    mainWin.setIgnoreMouseEvents(false);
-    return;
-  }
   mainWin.setIgnoreMouseEvents(Boolean(ignore), { forward: true });
 });
 
 ipcMain.on('fairy:set-phase', (_ev, nextPhase) => {
   updateBootTopmostLoop(String(nextPhase || 'dock'));
 });
+
+ipcMain.on('fairy:set-window-rect', (_ev, rect) => {
+  applyWindowRect(rect);
+});
+
+ipcMain.handle('fairy:get-display-bounds', () => screen.getPrimaryDisplay().bounds);
 
 let lastMainFocusable = !IS_WIN;
 ipcMain.on('fairy:set-focusable', (_ev, focusable) => {
@@ -980,25 +1025,12 @@ ipcMain.on('fairy:set-focusable', (_ev, focusable) => {
   }
 });
 
-ipcMain.on('fairy:set-shape', (_ev, rects) => {
+ipcMain.on('fairy:set-shape', () => {
   if (!mainWin || mainWin.isDestroyed() || !IS_WIN || IS_SMOKE_TEST) return;
   try {
-    if (Array.isArray(rects) && rects.length) {
-      const clean = rects
-        .map((r) => ({
-          x: Math.round(Number(r.x) || 0),
-          y: Math.round(Number(r.y) || 0),
-          width: Math.max(1, Math.round(Number(r.width) || 0)),
-          height: Math.max(1, Math.round(Number(r.height) || 0)),
-        }))
-        .slice(0, 8);
-      mainWin.setShape(clean);
-    } else {
-      const b = mainWin.getContentBounds();
-      mainWin.setShape([{ x: 0, y: 0, width: b.width, height: b.height }]);
-    }
+    mainWin.setShape([]);
   } catch {
-    // setShape không khả dụng: giữ nguyên cửa sổ.
+    // Không cần SetWindowRgn khi dùng cửa sổ OS nhỏ gọn trực tiếp.
   }
 });
 

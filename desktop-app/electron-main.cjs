@@ -24,6 +24,7 @@ const {
   readSync,
   readdirSync,
   statSync,
+  unlinkSync,
   watch,
   writeFileSync,
 } = require('node:fs');
@@ -60,6 +61,7 @@ const PLUGIN_ROOT = join(ROOT_DIR, '..', 'antigravity-plugin');
 const ASSETS_DIR = join(PLUGIN_ROOT, 'assets');
 const APP_DATA_DIR = join(homedir(), '.gemini', 'antigravity');
 const STATE_FILE = join(APP_DATA_DIR, 'plugin_data', 'fairy-zzz', 'state.json');
+const DESKTOP_ENDPOINT_FILE = join(APP_DATA_DIR, 'plugin_data', 'fairy-zzz', 'desktop-endpoint.json');
 const SIDECAR_INFO_FILE = join(APP_DATA_DIR, 'plugin_data', 'fairy-zzz', 'sidecar.json');
 const BRIDGE_INBOX_FILE = join(APP_DATA_DIR, 'plugin_data', 'fairy-zzz', 'bridge-inbox.json');
 const SIDECAR_LOG_FILE = join(APP_DATA_DIR, 'sidecar_data', 'fairy-zzz', 'fairy-hud', 'logs', 'sidecar.log');
@@ -100,6 +102,15 @@ let watchedTranscriptDir = '';
 let lastObservedTranscriptDir = '';
 let pollTimer = null;
 let lastStateKey = '';
+let mediaPort = 0;
+let latestHookEntry = null;
+let liveUiaSubtitle = null;
+let uiaPollTimer = null;
+let uiaPollInFlight = false;
+let uiaCandidateText = '';
+let uiaCandidateSince = 0;
+let uiaCommittedText = '';
+let uiaSubSeq = 0;
 
 function serveMediaWithRange(req, res, filePath, contentType) {
   let stat;
@@ -160,11 +171,81 @@ function serveMediaWithRange(req, res, filePath, contentType) {
   createReadStream(filePath).pipe(res);
 }
 
+function writeDesktopEndpointFile(port) {
+  if (IS_SMOKE_TEST || !port) return;
+  try {
+    mkdirSync(dirname(DESKTOP_ENDPOINT_FILE), { recursive: true });
+    writeFileSync(
+      DESKTOP_ENDPOINT_FILE,
+      JSON.stringify({ port: Number(port), pid: process.pid, updatedAt: Date.now() }),
+      'utf-8'
+    );
+  } catch {
+    // Ignore desktop endpoint publish error.
+  }
+}
+
+function handleHookPushRequest(req, res) {
+  const chunks = [];
+  let totalBytes = 0;
+  let finished = false;
+  req.on('data', (chunk) => {
+    if (finished) return;
+    totalBytes += chunk.length;
+    if (totalBytes > 131072) {
+      finished = true;
+      res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.end('{"ok":false,"error":"payload_too_large"}');
+      try { req.destroy(); } catch {}
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on('end', () => {
+    if (finished) return;
+    finished = true;
+    try {
+      const body = Buffer.concat(chunks).toString('utf-8');
+      const parsed = JSON.parse(body || '{}');
+      const entry = parsed?.entry && typeof parsed.entry === 'object' ? parsed.entry : parsed;
+      const convId = String(parsed?.conversationId || entry?.conversationId || '').trim();
+      if (convId && entry) {
+        latestHookEntry = {
+          ...entry,
+          conversationId: convId,
+          receivedAt: Date.now(),
+          source: 'hook-ipc',
+        };
+        pushStateToRenderer();
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end('{"ok":false,"error":"invalid_json"}');
+    }
+  });
+  req.on('error', () => {
+    if (!finished) {
+      finished = true;
+      try {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end('{"ok":false}');
+      } catch {}
+    }
+  });
+}
+
 function startLocalMediaServer() {
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
       const url = new URL(req.url || '/', 'http://127.0.0.1');
       const reqPath = url.pathname;
+
+      if (req.method === 'POST' && reqPath === '/api/hook-push') {
+        handleHookPushRequest(req, res);
+        return;
+      }
 
       if (ASSET_MAP[reqPath]) {
         const asset = ASSET_MAP[reqPath];
@@ -207,6 +288,8 @@ function startLocalMediaServer() {
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       mediaServer = server;
+      mediaPort = addr.port;
+      writeDesktopEndpointFile(addr.port);
       resolve(addr.port);
     });
   });
@@ -225,17 +308,35 @@ function computeEffectiveMood(entry, now) {
 }
 
 const dialogueCache = new Map();
-function extractTalkerEntriesFromUserContent(raw) {
-  const s = String(raw || '');
-  const m = /<talker_agent_context>([\s\S]*?)<\/talker_agent_context>/i.exec(s);
-  if (!m) return [];
-  return Array.from(m[1].matchAll(/^\[([^\]]+)\]\s*talker:\s*"([^"]+)"/gm)).map((hit) => ({
-    ts: String(hit[1] || ''),
-    text: String(hit[2] || '').replace(/\s+/g, ' ').trim(),
-  }));
+function stripSystemWrappers(raw) {
+  return String(raw || '')
+    .replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, ' ')
+    .replace(/<voice_instructions>[\s\S]*?<\/voice_instructions>/gi, ' ')
+    .replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, ' ');
 }
 
-function readTailUtf8(filePath, maxBytes = 32768) {
+function extractTalkerEntriesFromUserContent(raw) {
+  const s = stripSystemWrappers(raw);
+  const blocks = Array.from(s.matchAll(/<talker_agent_context>([\s\S]*?)<\/talker_agent_context>/gi));
+  const items = [];
+  for (const block of blocks) {
+    const body = block[1] || '';
+    for (const hit of body.matchAll(/^\[([^\]]+)\]\s*(talker|user):\s*"([^"]+)"/gm)) {
+      const role = String(hit[2] || '').toLowerCase();
+      const ts = String(hit[1] || '');
+      const text = String(hit[3] || '').replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      if (role === 'user') {
+        if (items.length > 0) items[items.length - 1].endedByUser = true;
+      } else if (role === 'talker') {
+        items.push({ ts, text, endedByUser: false });
+      }
+    }
+  }
+  return items;
+}
+
+function readTailUtf8(filePath, maxBytes = 262144) {
   const st = statSync(filePath);
   const size = Number(st.size) || 0;
   if (size <= 0) return { text: '', mtimeMs: st.mtimeMs, size: 0 };
@@ -279,34 +380,39 @@ function mergeLatestCompleteTalker(talkerListsNewestFirst) {
       const cleanPrev = accText.replace(/-\s*$/, '').trim();
       accText = `${cleanPrev}${noSpace ? '' : ' '}${t}`.trim();
     }
-    if (END_RE.test(accText)) {
-      mergedItems.push({ ts: accTs || item.ts || '', text: accText, complete: true });
+    if (END_RE.test(accText) || item.endedByUser) {
+      mergedItems.push({ ts: accTs || item.ts || '', text: accText.replace(/-\s*$/, '').trim(), complete: true });
       accText = '';
       accTs = '';
     }
   }
 
   if (accText) {
-    mergedItems.push({ ts: accTs, text: accText, complete: false });
+    mergedItems.push({ ts: accTs, text: accText.replace(/-\s*$/, '').trim(), complete: false });
   }
   if (!mergedItems.length) return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
 
+  const lastItem = mergedItems[mergedItems.length - 1];
   const lastComplete = [...mergedItems].reverse().find((it) => it.complete);
-  if (!lastComplete) {
-    return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
-  }
+  const chosen = lastItem.complete ? lastItem : (lastComplete || lastItem);
   return {
-    liveTalkerTime: lastComplete.ts,
-    liveTalkerText: lastComplete.text.slice(0, 340),
-    liveTalkerComplete: true,
+    liveTalkerTime: chosen.ts,
+    liveTalkerText: chosen.text.slice(0, 340),
+    liveTalkerComplete: Boolean(chosen.complete),
   };
 }
 
 function cleanUserTranscriptText(raw) {
-  let s = String(raw || '');
-  s = s.replace(/<CONTEXT_SUMMARY>[\s\S]*?<\/CONTEXT_SUMMARY>/gi, ' ');
-  s = s.replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, ' ');
-  s = s.replace(/<\/?USER_REQUEST>/gi, ' ');
+  const stripped = stripSystemWrappers(raw);
+  const userLines = Array.from(stripped.matchAll(/^\[[^\]]+\]\s*user:\s*"([^"]+)"/gm))
+    .map((m) => String(m[1] || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (userLines.length > 0) {
+    return userLines[userLines.length - 1];
+  }
+  const s = stripped
+    .replace(/<talker_agent_context>[\s\S]*?<\/talker_agent_context>/gi, ' ')
+    .replace(/<\/?USER_REQUEST>/gi, ' ');
   return s.replace(/\s+/g, ' ').trim();
 }
 
@@ -325,7 +431,7 @@ function extractRecentDialogueFromTranscript(transcriptPath, convId) {
   for (const logPath of candidates) {
     try {
       if (!existsSync(logPath)) continue;
-      const { text: tailText, mtimeMs, size } = readTailUtf8(logPath, 32768);
+      const { text: tailText, mtimeMs, size } = readTailUtf8(logPath, 262144);
       lastObservedTranscriptDir = dirname(logPath);
       const cacheKey = `${mtimeMs}:${size}`;
       const cached = dialogueCache.get(logPath);
@@ -679,7 +785,7 @@ function discoverSidecarPort() {
 
 function readSnapshot() {
   const now = Date.now();
-  let entry = null;
+  let diskEntry = null;
   let store = { conversations: {} };
 
   try {
@@ -690,11 +796,26 @@ function readSnapshot() {
         ? conversations[store.latestConversationId]
         : Object.values(conversations).sort((a, b) => (Number(b?.updatedAt) || 0) - (Number(a?.updatedAt) || 0))[0];
       if (preferred) {
-        entry = { ...preferred, source: 'hook' };
+        diskEntry = { ...preferred, source: 'hook' };
       }
     }
   } catch {
     // Ignore transient file read error.
+  }
+
+  let entry = diskEntry;
+  if (latestHookEntry && latestHookEntry.conversationId) {
+    const ipcConv = latestHookEntry.conversationId;
+    const diskForIpc = store?.conversations?.[ipcConv];
+    const ipcTime = Number(latestHookEntry.updatedAt) || 0;
+    const diskTime = Number(diskForIpc?.updatedAt || diskEntry?.updatedAt) || 0;
+    if (!diskEntry || ipcTime >= diskTime) {
+      entry = {
+        ...(diskForIpc || {}),
+        ...latestHookEntry,
+        source: 'hook-ipc',
+      };
+    }
   }
 
   const recentConversations = Object.values(store?.conversations || {})
@@ -718,20 +839,26 @@ function readSnapshot() {
     entry = readLatestTranscriptFallback();
   }
 
+  const uiaOpen = Boolean(liveUiaSubtitle?.voiceOpen && now - (Number(liveUiaSubtitle?.lastSeenAt) || 0) < 5000);
+  const uiaFreshText =
+    liveUiaSubtitle && liveUiaSubtitle.text && now - (Number(liveUiaSubtitle.updatedAt) || 0) < 20000
+      ? liveUiaSubtitle
+      : null;
+
   if (!entry) {
     return {
-      conversationId: '',
-      mood: 'idle',
-      emotionMood: 'idle',
-      dialogueQuip: '',
+      conversationId: uiaFreshText ? 'live-uia' : '',
+      mood: uiaOpen ? 'comforting' : 'idle',
+      emotionMood: uiaOpen ? 'comforting' : 'idle',
+      dialogueQuip: uiaFreshText?.text ? `🎙️ ${uiaFreshText.text}` : '',
       lastReplySpeech: '',
-      voiceActive: false,
+      voiceActive: uiaOpen,
       voiceSessionEnded: false,
       lastVoiceText: '',
       lastVoiceTime: 0,
-      liveTalkerText: '',
-      liveTalkerTime: '',
-      liveTalkerComplete: false,
+      liveTalkerText: uiaFreshText?.text || '',
+      liveTalkerTime: uiaFreshText ? `uia:${uiaFreshText.seq}` : '',
+      liveTalkerComplete: Boolean(uiaFreshText?.complete),
       hybridConnected,
       sidecarPort,
       workspaceUris: sidecarEndpoint.workspaceUris || [],
@@ -745,19 +872,52 @@ function readSnapshot() {
       lastToolError: '',
       terminationReason: '',
       sessionStartedAt: 0,
-      updatedAt: 0,
-      source: 'none',
+      updatedAt: uiaFreshText?.updatedAt || 0,
+      source: uiaFreshText ? 'uia-live' : 'none',
       serverTime: now,
     };
   }
 
   const dialogue = extractRecentDialogueFromTranscript(entry.transcriptPath, entry.conversationId);
   const voiceChat = readLatestVoiceChatState(entry.conversationId, now);
+  if (uiaOpen) {
+    voiceChat.voiceActive = true;
+    voiceChat.voiceSessionEnded = false;
+  }
+
+  const hookLiveTime = Number(entry.liveTalkerUpdatedAt) || 0;
+  const hookLiveText = String(entry.liveTalkerText || '').trim();
+  const useUia = Boolean(uiaFreshText && (!hookLiveText || uiaFreshText.updatedAt >= hookLiveTime));
+  const useHookLive = Boolean(!useUia && hookLiveText && (!dialogue.liveTalkerText || hookLiveTime >= (dialogue.mtimeMs || 0) - 2000));
+
+  const liveTalkerText = useUia
+    ? uiaFreshText.text
+    : useHookLive
+      ? hookLiveText
+      : (dialogue.liveTalkerText || '');
+  const liveTalkerTime = useUia
+    ? `uia:${uiaFreshText.seq}`
+    : useHookLive
+      ? (entry.liveTalkerTime || String(hookLiveTime))
+      : (dialogue.liveTalkerTime || '');
+  const liveTalkerComplete = useUia
+    ? Boolean(uiaFreshText.complete)
+    : useHookLive
+      ? Boolean(entry.liveTalkerComplete)
+      : Boolean(dialogue.liveTalkerComplete);
+
+  const effectiveUserText = dialogue.userText || entry.lastPromptPreview || '';
+  const hookAssistantText =
+    entry.lastAssistantText && Number(entry.lastAssistantUpdatedAt || 0) >= (dialogue.mtimeMs || 0) - 2000
+      ? String(entry.lastAssistantText)
+      : '';
+  const effectiveModelRaw = dialogue.modelRawText || dialogue.modelText || hookAssistantText || '';
+
   const analysis = analyzeDialogueContext({
     entry,
-    userText: dialogue.userText,
-    modelText: dialogue.modelText,
-    voiceChat,
+    userText: effectiveUserText,
+    modelText: dialogue.modelText || hookAssistantText,
+    voiceChat: uiaFreshText ? { ...voiceChat, lastVoiceText: uiaFreshText.text || voiceChat.lastVoiceText } : voiceChat,
     hasStepError: dialogue.hasStepError,
     now,
   });
@@ -767,19 +927,19 @@ function readSnapshot() {
     mood: analysis.mood,
     emotionMood: analysis.emotionMood,
     dialogueQuip: analysis.dialogueQuip,
-    lastReplySpeech: buildSpeechSummaryFromModel(dialogue.modelRawText || dialogue.modelText || ''),
-    voiceActive: Boolean(voiceChat.voiceActive),
-    voiceSessionEnded: Boolean(voiceChat.voiceSessionEnded),
+    lastReplySpeech: buildSpeechSummaryFromModel(effectiveModelRaw),
+    voiceActive: Boolean(voiceChat.voiceActive || uiaOpen),
+    voiceSessionEnded: Boolean(voiceChat.voiceSessionEnded && !uiaOpen),
     lastVoiceText: voiceChat.lastVoiceText || '',
     lastVoiceTime: Number(voiceChat.lastVoiceTime) || 0,
-    liveTalkerText: dialogue.liveTalkerText || '',
-    liveTalkerTime: dialogue.liveTalkerTime || '',
-    liveTalkerComplete: Boolean(dialogue.liveTalkerComplete),
+    liveTalkerText,
+    liveTalkerTime,
+    liveTalkerComplete,
     hybridConnected,
     sidecarPort,
     workspaceUris: sidecarEndpoint.workspaceUris || [],
     recentConversations,
-    lastPromptPreview: dialogue.userText || entry.lastPromptPreview || '',
+    lastPromptPreview: effectiveUserText,
     lastEvent: entry.lastEvent || '',
     modelName: entry.modelName || '',
     invocationCount: Number(entry.invocationCount) || 0,
@@ -1517,10 +1677,37 @@ const spokenStateByConv = new Map();
 let voiceDebounceTimer = null;
 let stopDebounceTimer = null;
 
+let lastGlobalVoiceNorm = '';
+let lastGlobalVoiceAt = 0;
+const spokenVoiceKeys = new Set();
+
+function markSpokenVoiceKey(key) {
+  if (!key) return;
+  spokenVoiceKeys.add(key);
+  if (spokenVoiceKeys.size > 60) {
+    const oldest = spokenVoiceKeys.values().next().value;
+    if (oldest !== undefined) spokenVoiceKeys.delete(oldest);
+  }
+}
+
+function normalizeSpeechKey(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
 function getConvSpokenState(convId) {
   const key = convId || 'default';
   if (!spokenStateByConv.has(key)) {
-    spokenStateByConv.set(key, { lastVoiceKey: '', lastStopKey: '', lastText: '', incompletePrefix: '' });
+    spokenStateByConv.set(key, {
+      lastVoiceKey: '',
+      lastStopKey: '',
+      lastText: '',
+      lastVoiceNorm: '',
+      lastVoiceAt: 0,
+      incompletePrefix: '',
+    });
   }
   return spokenStateByConv.get(key);
 }
@@ -1719,20 +1906,29 @@ function scheduleSpeechFromSnapshot(snap) {
   if (!ttsBaselineReady) {
     ttsBaselineReady = true;
     convState.lastVoiceKey = voiceInit.key;
+    markSpokenVoiceKey(voiceInit.key);
     convState.lastStopKey = stopInit.key;
     convState.lastText = voiceInit.text || stopInit.text || '';
+    if (voiceInit.text) {
+      convState.lastVoiceNorm = normalizeSpeechKey(voiceInit.text);
+      convState.lastVoiceAt = Date.now();
+      lastGlobalVoiceNorm = convState.lastVoiceNorm;
+      lastGlobalVoiceAt = convState.lastVoiceAt;
+    }
     return;
   }
   if (!ttsEnabled || IS_SMOKE_TEST) return;
 
-  if (voiceInit.key && voiceInit.key !== convState.lastVoiceKey) {
+  if (voiceInit.key && voiceInit.key !== convState.lastVoiceKey && !spokenVoiceKeys.has(voiceInit.key)) {
     clearTimeout(voiceDebounceTimer);
+    const delayMs = voiceInit.complete ? 15 : 650;
     voiceDebounceTimer = setTimeout(() => {
       const latest = readSnapshot();
       const cand = getVoiceCandidate(latest);
       const st = getConvSpokenState(latest?.conversationId);
-      if (!ttsEnabled || !cand.key || cand.key === st.lastVoiceKey) return;
+      if (!ttsEnabled || !cand.key || cand.key === st.lastVoiceKey || spokenVoiceKeys.has(cand.key)) return;
       st.lastVoiceKey = cand.key;
+      markSpokenVoiceKey(cand.key);
 
       let toSpeak = cand.text;
       if (st.incompletePrefix && cand.rawText && cand.rawText.startsWith(st.incompletePrefix)) {
@@ -1741,11 +1937,25 @@ function scheduleSpeechFromSnapshot(snap) {
       }
       st.incompletePrefix = cand.complete ? '' : cand.rawText;
 
-      if (toSpeak && toSpeak.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 4 && toSpeak !== st.lastText) {
+      const norm = normalizeSpeechKey(toSpeak);
+      const now = Date.now();
+      const dupVoiceLocal = norm && norm === st.lastVoiceNorm && now - (st.lastVoiceAt || 0) < 25000;
+      const dupVoiceGlobal = norm && norm === lastGlobalVoiceNorm && now - lastGlobalVoiceAt < 25000;
+      if (
+        toSpeak &&
+        toSpeak.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 4 &&
+        toSpeak !== st.lastText &&
+        !dupVoiceLocal &&
+        !dupVoiceGlobal
+      ) {
         st.lastText = toSpeak;
+        st.lastVoiceNorm = norm;
+        st.lastVoiceAt = now;
+        lastGlobalVoiceNorm = norm;
+        lastGlobalVoiceAt = now;
         enqueueFairySpeech(toSpeak).catch(() => {});
       }
-    }, 15);
+    }, delayMs);
   }
 
   if (stopInit.key && stopInit.key !== convState.lastStopKey) {
@@ -1767,6 +1977,97 @@ function scheduleSpeechFromSnapshot(snap) {
         enqueueFairySpeech(cand.text).catch(() => {});
       }
     }, 30);
+  }
+}
+
+function scheduleNextUiaPoll(delayMs = 350) {
+  if (IS_SMOKE_TEST || !IS_WIN) return;
+  clearTimeout(uiaPollTimer);
+  uiaPollTimer = setTimeout(pollLiveVoiceSubtitle, delayMs);
+}
+
+async function pollLiveVoiceSubtitle() {
+  if (IS_SMOKE_TEST || !IS_WIN) return;
+  if (uiaPollInFlight) {
+    scheduleNextUiaPoll(350);
+    return;
+  }
+  if (!voiceWorkerReady || voicePending.size > 0) {
+    scheduleNextUiaPoll(voicePending.size > 0 ? 500 : 800);
+    return;
+  }
+
+  uiaPollInFlight = true;
+  let nextDelay = 700;
+  try {
+    const res = await sendVoiceWorkerCommand('READ_VOICE_SUBTITLE', {}, 900);
+    const now = Date.now();
+    if (!res || !res.ok) {
+      nextDelay = res?.error === 'window_not_found' ? 2000 : 1000;
+    } else if (!res.voiceOpen) {
+      const wasOpen = Boolean(liveUiaSubtitle?.voiceOpen);
+      uiaCandidateText = '';
+      uiaCandidateSince = 0;
+      uiaCommittedText = '';
+      if (wasOpen) {
+        liveUiaSubtitle = null;
+        pushStateToRenderer();
+      }
+      nextDelay = 700;
+    } else {
+      nextDelay = 350;
+      const rawSub = String(res.subtitle || '').replace(/\s+/g, ' ').trim();
+      if (liveUiaSubtitle) {
+        liveUiaSubtitle.lastSeenAt = now;
+        liveUiaSubtitle.voiceOpen = true;
+      } else {
+        liveUiaSubtitle = {
+          seq: uiaSubSeq,
+          voiceOpen: true,
+          text: '',
+          timer: String(res.timer || ''),
+          updatedAt: 0,
+          lastSeenAt: now,
+          complete: false,
+        };
+      }
+
+      if (rawSub && rawSub !== uiaCommittedText) {
+        if (rawSub !== uiaCandidateText) {
+          uiaCandidateText = rawSub;
+          uiaCandidateSince = now;
+        }
+        const endsSentence = /[.!?…]["”']?\s*$/.test(rawSub);
+        const heldMs = now - uiaCandidateSince;
+        if (endsSentence || heldMs >= 650) {
+          let deltaText = rawSub;
+          if (uiaCommittedText.length >= 10 && rawSub.startsWith(uiaCommittedText)) {
+            const suffix = rawSub.slice(uiaCommittedText.length).trim();
+            if (suffix.replace(/[^A-Za-zÀ-ỹ0-9]/g, '').length >= 4) {
+              deltaText = suffix;
+            }
+          }
+          uiaCommittedText = rawSub;
+          uiaSubSeq += 1;
+          liveUiaSubtitle = {
+            seq: uiaSubSeq,
+            voiceOpen: true,
+            text: deltaText,
+            fullText: rawSub,
+            timer: String(res.timer || ''),
+            updatedAt: now,
+            lastSeenAt: now,
+            complete: true,
+          };
+          pushStateToRenderer();
+        }
+      }
+    }
+  } catch {
+    nextDelay = 1000;
+  } finally {
+    uiaPollInFlight = false;
+    scheduleNextUiaPoll(nextDelay);
   }
 }
 
@@ -1816,14 +2117,28 @@ app.whenReady().then(async () => {
   }
   startTelemetryWatcher();
   startVoiceWorker();
-  if (!IS_SMOKE_TEST) startTtsWorker();
+  if (!IS_SMOKE_TEST) {
+    startTtsWorker();
+    scheduleNextUiaPoll(900);
+  }
 });
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   clearInterval(pollTimer);
+  clearTimeout(uiaPollTimer);
   clearTimeout(voiceDebounceTimer);
   clearTimeout(stopDebounceTimer);
+  if (!IS_SMOKE_TEST && existsSync(DESKTOP_ENDPOINT_FILE)) {
+    try {
+      const parsed = JSON.parse(readFileSync(DESKTOP_ENDPOINT_FILE, 'utf-8'));
+      if (Number(parsed?.pid) === process.pid) {
+        unlinkSync(DESKTOP_ENDPOINT_FILE);
+      }
+    } catch {
+      // Ignore cleanup error.
+    }
+  }
   if (ttsWorker) {
     try {
       ttsWorker.kill();

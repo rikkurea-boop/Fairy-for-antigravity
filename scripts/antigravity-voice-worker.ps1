@@ -650,12 +650,220 @@ public static class AntigravityVoiceBridge {
     return false;
   }
 
+  static IntPtr _cachedParentHwnd = IntPtr.Zero;
+  static List<IntPtr> _cachedRenderHwnds = new List<IntPtr>();
+  static long _lastWakeTick = 0;
+
+  static List<IntPtr> EnsureRenderWidgetHosts(IntPtr parentHwnd, bool forceWake) {
+    long nowTick = Environment.TickCount & 0x7FFFFFFF;
+    if (!forceWake && _cachedParentHwnd == parentHwnd && _cachedRenderHwnds.Count > 0 &&
+        nowTick >= _lastWakeTick && (nowTick - _lastWakeTick) < 15000) {
+      return _cachedRenderHwnds;
+    }
+    var list = WakeRenderWidgetHosts(parentHwnd);
+    _cachedParentHwnd = parentHwnd;
+    _cachedRenderHwnds = list;
+    _lastWakeTick = nowTick;
+    return list;
+  }
+
+  sealed class UiaTextItem {
+    public System.Windows.Rect Rect;
+    public double CenterY;
+    public string Text;
+    public ControlType Kind;
+  }
+
+  static void CollectSubtreeTextAndButtons(IntPtr rootHwnd, OrCondition cond, double minTop, List<UiaTextItem> outItems) {
+    AutomationElement root = null;
+    try { root = AutomationElement.FromHandle(rootHwnd); } catch { return; }
+    if (root == null) return;
+    AutomationElementCollection all = null;
+    try { all = root.FindAll(TreeScope.Descendants, cond); } catch { return; }
+    if (all == null || all.Count == 0) return;
+
+    foreach (AutomationElement el in all) {
+      string name = "";
+      ControlType ct = null;
+      System.Windows.Rect br = System.Windows.Rect.Empty;
+      try {
+        name = (el.Current.Name ?? "").Trim();
+        if (string.IsNullOrEmpty(name)) continue;
+        ct = el.Current.ControlType;
+        br = el.Current.BoundingRectangle;
+      } catch { continue; }
+
+      if (br.IsEmpty || br.Width < 4 || br.Height < 8) continue;
+      if (br.Top < minTop) continue;
+
+      outItems.Add(new UiaTextItem {
+        Rect = br,
+        CenterY = br.Top + br.Height / 2.0,
+        Text = name,
+        Kind = ct
+      });
+    }
+  }
+
+  static string ReadVoiceModeSubtitle(IntPtr hwnd, RECT winRc) {
+    try {
+      int winW = winRc.Right - winRc.Left;
+      int winH = winRc.Bottom - winRc.Top;
+      double minTop = winRc.Top + winH * 0.40;
+
+      var items = new List<UiaTextItem>();
+      var cond = new OrCondition(
+        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Text),
+        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)
+      );
+
+      for (int pass = 0; pass < 2; pass++) {
+        var renderHwnds = EnsureRenderWidgetHosts(hwnd, pass > 0);
+        for (int i = renderHwnds.Count - 1; i >= 0; i--) {
+          CollectSubtreeTextAndButtons(renderHwnds[i], cond, minTop, items);
+        }
+        if (items.Count == 0) {
+          CollectSubtreeTextAndButtons(hwnd, cond, minTop, items);
+        }
+        if (items.Count > 0) break;
+      }
+
+      if (items.Count == 0) {
+        return "{\"ok\":true,\"voiceOpen\":false,\"subtitle\":\"\"}";
+      }
+
+      UiaTextItem endBtn = null;
+      UiaTextItem timerItem = null;
+      UiaTextItem agItem = null;
+      var timerRx = new Regex(@"^(?:Antigravity\s+)?(\d{1,2}:\d{2})$", RegexOptions.IgnoreCase);
+      var endRx = new Regex(@"^(?:[×✕xX]\s*)?(End|End\s+voice.*|Stop\s+voice.*|Kết\s+thúc.*)$", RegexOptions.IgnoreCase);
+
+      foreach (var it in items) {
+        if (it.Kind == ControlType.Button && endRx.IsMatch(it.Text) && it.Rect.Left >= winRc.Left + winW * 0.35) {
+          if (endBtn == null || it.CenterY > endBtn.CenterY) endBtn = it;
+        } else if (it.Kind == ControlType.Text && timerRx.IsMatch(it.Text)) {
+          if (timerItem == null || it.CenterY > timerItem.CenterY) timerItem = it;
+        } else if (it.Kind == ControlType.Text && it.Text.Equals("Antigravity", StringComparison.OrdinalIgnoreCase)) {
+          if (agItem == null || it.CenterY > agItem.CenterY) agItem = it;
+        }
+      }
+
+      bool voiceOpen = false;
+      double headerBottom = 0;
+      double cardLeft = winRc.Left + winW * 0.25;
+      double cardRight = winRc.Right - 8;
+      string timerText = "";
+
+      if (endBtn != null) {
+        int headerSiblings = 0;
+        double minRowX = endBtn.Rect.Left;
+        foreach (var it in items) {
+          if (it == endBtn) continue;
+          if (Math.Abs(it.CenterY - endBtn.CenterY) <= 24.0 && it.Rect.Right <= endBtn.Rect.Left + 8) {
+            if (it.Kind == ControlType.Button) headerSiblings++;
+            if (it.Rect.Left < minRowX && it.Rect.Left >= winRc.Left + winW * 0.15) {
+              minRowX = it.Rect.Left;
+            }
+          }
+        }
+        bool hasTimerOnRow = timerItem != null && Math.Abs(timerItem.CenterY - endBtn.CenterY) <= 28.0;
+        bool hasAgOnRow = agItem != null && Math.Abs(agItem.CenterY - endBtn.CenterY) <= 28.0;
+        if (hasTimerOnRow || hasAgOnRow || headerSiblings >= 2) {
+          voiceOpen = true;
+          headerBottom = endBtn.Rect.Bottom;
+          if (hasTimerOnRow) {
+            headerBottom = Math.Max(headerBottom, timerItem.Rect.Bottom);
+            timerText = timerRx.Match(timerItem.Text).Groups[1].Value;
+            minRowX = Math.Min(minRowX, timerItem.Rect.Left - 90);
+          }
+          if (hasAgOnRow) {
+            minRowX = Math.Min(minRowX, agItem.Rect.Left - 24);
+          }
+          cardLeft = Math.Max(winRc.Left + 10, minRowX - 36);
+          cardRight = Math.Min(winRc.Right - 4, endBtn.Rect.Right + 24);
+        }
+      } else if (timerItem != null && agItem != null && Math.Abs(timerItem.CenterY - agItem.CenterY) <= 22.0) {
+        voiceOpen = true;
+        headerBottom = Math.Max(timerItem.Rect.Bottom, agItem.Rect.Bottom);
+        cardLeft = Math.Max(winRc.Left + 10, agItem.Rect.Left - 36);
+        timerText = timerRx.Match(timerItem.Text).Groups[1].Value;
+      }
+
+      if (!voiceOpen) {
+        return "{\"ok\":true,\"voiceOpen\":false,\"subtitle\":\"\"}";
+      }
+
+      double cardBottomLimit = Math.Min((double)(winRc.Bottom - 16), headerBottom + 260.0);
+      var composerLimitRx = new Regex(@"(Start\s+Voice\s+mode|Record\s+voice\s+memo|Add\s+context|^\s*Send\s*$)", RegexOptions.IgnoreCase);
+      foreach (var it in items) {
+        if (it.Kind == ControlType.Button && it.Rect.Top > headerBottom + 8 && composerLimitRx.IsMatch(it.Text)) {
+          if (it.Rect.Top < cardBottomLimit) cardBottomLimit = it.Rect.Top;
+        }
+      }
+
+      var skipTextRx = new Regex(@"^(?:[×✕xX]|End|Antigravity|\d{1,2}:\d{2}|Planning|Fast|Turbo|Model|Ask anything.*|Type a message.*)$", RegexOptions.IgnoreCase);
+      var subNodes = new List<UiaTextItem>();
+      foreach (var it in items) {
+        if (it.Kind != ControlType.Text) continue;
+        if (it.Rect.Top < headerBottom - 4 || it.Rect.Top > cardBottomLimit - 4) continue;
+        if (it.Rect.Bottom > cardBottomLimit + 8) continue;
+        if (it.Rect.Right < cardLeft || it.Rect.Left > cardRight) continue;
+        if (it.Rect.Height < 11) continue;
+        string cleaned = Regex.Replace(it.Text, @"\s+", " ").Trim();
+        if (string.IsNullOrEmpty(cleaned) || skipTextRx.IsMatch(cleaned)) continue;
+        if (Regex.Replace(cleaned, @"[^A-Za-zÀ-ỹ0-9]", "").Length < 2) continue;
+        subNodes.Add(new UiaTextItem {
+          Rect = it.Rect,
+          CenterY = it.CenterY,
+          Text = cleaned,
+          Kind = it.Kind
+        });
+      }
+
+      subNodes.Sort((a, b) => {
+        int cy = a.Rect.Top.CompareTo(b.Rect.Top);
+        return cy != 0 ? cy : a.Rect.Left.CompareTo(b.Rect.Left);
+      });
+
+      var kept = new List<string>();
+      for (int i = 0; i < subNodes.Count; i++) {
+        string cur = subNodes[i].Text;
+        bool duplicate = false;
+        for (int j = 0; j < kept.Count; j++) {
+          if (kept[j].Equals(cur, StringComparison.Ordinal)) {
+            duplicate = true;
+            break;
+          }
+          if (kept[j].Contains(cur) && cur.Length >= 8) {
+            duplicate = true;
+            break;
+          }
+        }
+        if (!duplicate) kept.Add(cur);
+      }
+
+      string subtitle = Regex.Replace(string.Join(" ", kept), @"\s+", " ").Trim();
+      if (subtitle.Length > 420) subtitle = subtitle.Substring(0, 420);
+
+      return "{\"ok\":true,\"voiceOpen\":true,\"timer\":\"" + EscapeJson(timerText) +
+        "\",\"subtitle\":\"" + EscapeJson(subtitle) + "\"}";
+    } catch (Exception ex) {
+      return "{\"ok\":false,\"voiceOpen\":false,\"subtitle\":\"\",\"error\":\"" + EscapeJson(ex.Message) + "\"}";
+    }
+  }
+
   public static string Execute(string cmd) {
     IntPtr hwnd = FindAntigravityWindow();
     if (hwnd == IntPtr.Zero) return "{\"ok\":false,\"error\":\"window_not_found\"}";
 
-    FocusWindow(hwnd);
     RECT winRc;
+    GetWindowRect(hwnd, out winRc);
+
+    if (cmd == "READ_VOICE_SUBTITLE") {
+      return ReadVoiceModeSubtitle(hwnd, winRc);
+    }
+
+    FocusWindow(hwnd);
     GetWindowRect(hwnd, out winRc);
     int winW = winRc.Right - winRc.Left;
 

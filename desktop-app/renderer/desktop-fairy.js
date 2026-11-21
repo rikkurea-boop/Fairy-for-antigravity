@@ -333,6 +333,9 @@
   const DOCK_SIZE = 128;
   const EYE_MARGIN = 130; // Cửa sổ dock 260x260: dư >30px biên alpha=0 ngoài quầng sáng
   let dockScreenPos = null;
+  let dockSettled = phase === 'dock';
+  let dockSettleTimer = null;
+  let pendingSpeakPayload = null;
   let lastWindowLayout = { x: 0, y: 0, width: displayBounds.width, height: displayBounds.height, coreX: 130, coreY: 130, flip: false, fullscreen: true };
   let lastFocusable = null;
   let chatInputActive = false;
@@ -697,7 +700,7 @@
   function syncWindowLayout() {
     syncWindowFocusability();
     const pos = ensureDockScreenPos();
-    const wantFullscreen = phase === 'boot' || phase === 'greet' || !settingsModal.classList.contains('hidden');
+    const wantFullscreen = phase === 'boot' || phase === 'greet' || !dockSettled || !settingsModal.classList.contains('hidden');
     if (wantFullscreen) {
       const localX = pos.x - displayBounds.x;
       const localY = pos.y - displayBounds.y;
@@ -855,7 +858,11 @@
   }
 
   function playLiveSpeakAudio(payload) {
-    if (!payload || !payload.url || !prefs.tts || phase === 'boot') return;
+    if (!payload || !payload.url || !prefs.tts) return;
+    if (phase === 'boot' || phase === 'greet' || !dockSettled) {
+      pendingSpeakPayload = payload;
+      return;
+    }
     const vol = Math.min(1, Math.max(0, prefs.volume / 100));
     if (vol <= 0) return;
     stopGreetingVoice();
@@ -926,6 +933,7 @@
   function setPhase(nextPhase) {
     clearTimeout(bootFailsafe);
     clearTimeout(greetTimer);
+    clearTimeout(dockSettleTimer);
     const prevPhase = phase;
     if (prevPhase === 'greet' && nextPhase !== 'greet') {
       stopGreetingVoice();
@@ -938,6 +946,8 @@
     }
 
     if (nextPhase === 'boot') {
+      dockSettled = false;
+      layerEl.dataset.settled = '0';
       closeBubble();
       settingsModal.classList.add('hidden');
       $('btn-skip-greet').classList.add('hidden');
@@ -945,6 +955,8 @@
       setIgnoreMouse(false);
       startBootPlayback();
     } else if (nextPhase === 'greet') {
+      dockSettled = false;
+      layerEl.dataset.settled = '0';
       try { bootVideo.pause(); } catch {}
       bootStageEl.classList.add('is-out');
       setTimeout(() => { if (phase !== 'boot') bootStageEl.classList.add('hidden'); }, 620);
@@ -959,13 +971,35 @@
       playGreetingVoice();
     } else {
       try { bootVideo.pause(); } catch {}
-      bootStageEl.classList.add('hidden');
       $('btn-skip-greet').classList.add('hidden');
       startMotionLoop();
       scheduleBlinkLoop();
       scheduleGlitchLoop();
       scheduleFlickerLoop();
-      setIgnoreMouse(true);
+      const shouldAnimateDock = prevPhase === 'boot' || prevPhase === 'greet';
+      if (shouldAnimateDock) {
+        dockSettled = false;
+        layerEl.dataset.settled = '0';
+        setIgnoreMouse(false);
+        dockSettleTimer = setTimeout(() => {
+          if (phase !== 'dock') return;
+          dockSettled = true;
+          layerEl.dataset.settled = '1';
+          bootStageEl.classList.add('hidden');
+          setIgnoreMouse(true);
+          syncWindowLayout();
+          if (pendingSpeakPayload) {
+            const p = pendingSpeakPayload;
+            pendingSpeakPayload = null;
+            playLiveSpeakAudio(p);
+          }
+        }, 1400);
+      } else {
+        dockSettled = true;
+        layerEl.dataset.settled = '1';
+        bootStageEl.classList.add('hidden');
+        setIgnoreMouse(true);
+      }
     }
     syncWindowLayout();
   }

@@ -73,10 +73,13 @@ html, body {
 }
 
 .fz3-layer[data-phase="dock"] .fz3-screen {
-  display: none !important;
   opacity: 0;
   filter: blur(7px);
   pointer-events: none;
+}
+
+.fz3-layer[data-phase="dock"][data-settled="1"] .fz3-screen {
+  display: none !important;
 }
 
 .fz3-bg {
@@ -535,6 +538,9 @@ html, body {
   opacity: 1;
   pointer-events: auto;
   cursor: pointer;
+}
+
+.fz3-layer[data-phase="dock"][data-settled="1"] .fz3-core {
   transition: opacity 0.55s ease;
 }
 

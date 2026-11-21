@@ -851,6 +851,11 @@
 
   function stopLiveSpeakAudio(clearQueue = true) {
     if (clearQueue) {
+      for (const q of speakQueue) {
+        if (q && q.audio) {
+          try { q.audio.pause(); } catch {}
+        }
+      }
       speakQueue = [];
       activeSpeakReqId = 0;
     }
@@ -869,10 +874,10 @@
     stopGreetingVoice();
     stopLiveSpeakAudio(false);
 
-    const audio = new Audio(payload.url);
+    const audio = payload.audio || new Audio(payload.url);
     liveSpeakAudio = audio;
     audio.volume = vol;
-    audio.addEventListener('playing', () => {
+    audio.onplaying = () => {
       if (liveSpeakAudio !== audio) return;
       setTalkingState(true, 25000);
       if (
@@ -883,7 +888,7 @@
       ) {
         openBubble('toast', `— ${payload.text}`, 10000);
       }
-    });
+    };
     const finishOrNext = () => {
       if (liveSpeakAudio !== audio) return;
       liveSpeakAudio = null;
@@ -894,8 +899,8 @@
         setTalkingState(false, 0);
       }
     };
-    audio.addEventListener('ended', finishOrNext);
-    audio.addEventListener('error', finishOrNext);
+    audio.onended = finishOrNext;
+    audio.onerror = finishOrNext;
     audio.play().catch(finishOrNext);
   }
 
@@ -918,7 +923,11 @@
     }
 
     if (liveSpeakAudio && !liveSpeakAudio.ended) {
-      speakQueue.push(payload);
+      const preAudio = new Audio(payload.url);
+      preAudio.preload = 'auto';
+      preAudio.volume = Math.min(1, Math.max(0, prefs.volume / 100));
+      try { preAudio.load(); } catch {}
+      speakQueue.push({ ...payload, audio: preAudio });
     } else {
       startSpeakChunkPlayback(payload);
     }

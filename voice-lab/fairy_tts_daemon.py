@@ -47,7 +47,7 @@ def emit_json(payload: dict):
     REAL_STDOUT.flush()
 
 
-def split_speech_clauses(raw: str, max_chars: int = 340, max_clauses: int = 3):
+def split_speech_clauses(raw: str, max_chars: int = 420, max_clauses: int = 4):
     text = re.sub(r"\s+", " ", str(raw or "")).strip()
     if not text:
         return []
@@ -57,21 +57,11 @@ def split_speech_clauses(raw: str, max_chars: int = 340, max_clauses: int = 3):
     for part in parts:
         if not part or not re.search(r"[\wÀ-ỹ]", part, re.UNICODE):
             continue
-        if len(clauses) == 0 and len(part) > 95:
-            m_comma = re.search(r"[,;:]\s+", part[38:110])
-            if m_comma:
-                cut = 38 + m_comma.start() + 1
-                first_clause = part[:cut].strip()
-                rest_clause = part[cut:].strip()
-                if first_clause and rest_clause:
-                    clauses.append(first_clause)
-                    total_len += len(first_clause) + 1
-                    part = rest_clause
-        if len(part) > 190:
+        if len(part) > 125:
             subparts = [sp.strip() for sp in re.split(r"(?<=[,;:])\s+", part) if sp.strip()]
             buf = ""
             for sp in subparts:
-                if buf and len(buf) + len(sp) + 1 > 160:
+                if buf and len(buf) + len(sp) + 1 > 120 and len(buf) >= 55:
                     clauses.append(buf)
                     total_len += len(buf) + 1
                     buf = sp

@@ -342,6 +342,7 @@ def render_independent_formant_android(
     peak = float(np.max(np.abs(y_out))) if len(y_out) else 0.0
     if peak > 0.89:
         y_out = (np.tanh(y_out / 0.89) * 0.89).astype(np.float32)
+    y_out = trim_silence_taper(y_out, sr=sr, pad_ms=18)
     write_mono_wav(out_path, y_out, sr=sr)
 
 

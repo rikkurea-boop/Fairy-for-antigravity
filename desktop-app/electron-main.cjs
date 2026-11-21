@@ -291,23 +291,14 @@ function mergeLatestCompleteTalker(talkerListsNewestFirst) {
   }
   if (!mergedItems.length) return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
 
-  const tail = mergedItems.at(-1);
-  if (!tail.complete && tail.text.length < 12) {
-    const prevComplete = mergedItems.length >= 2 ? mergedItems[mergedItems.length - 2] : null;
-    if (prevComplete) {
-      return {
-        liveTalkerTime: prevComplete.ts,
-        liveTalkerText: prevComplete.text.slice(0, 340),
-        liveTalkerComplete: true,
-      };
-    }
+  const lastComplete = [...mergedItems].reverse().find((it) => it.complete);
+  if (!lastComplete) {
     return { liveTalkerTime: '', liveTalkerText: '', liveTalkerComplete: false };
   }
-
   return {
-    liveTalkerTime: tail.ts,
-    liveTalkerText: tail.text.slice(0, 340),
-    liveTalkerComplete: tail.complete,
+    liveTalkerTime: lastComplete.ts,
+    liveTalkerText: lastComplete.text.slice(0, 340),
+    liveTalkerComplete: true,
   };
 }
 
@@ -776,7 +767,7 @@ function readSnapshot() {
     mood: analysis.mood,
     emotionMood: analysis.emotionMood,
     dialogueQuip: analysis.dialogueQuip,
-    lastReplySpeech: cleanTextForSpeech(dialogue.modelRawText || dialogue.modelText || ''),
+    lastReplySpeech: buildSpeechSummaryFromModel(dialogue.modelRawText || dialogue.modelText || ''),
     voiceActive: Boolean(voiceChat.voiceActive),
     voiceSessionEnded: Boolean(voiceChat.voiceSessionEnded),
     lastVoiceText: voiceChat.lastVoiceText || '',
@@ -802,6 +793,36 @@ function readSnapshot() {
     source: entry.source || 'hook',
     serverTime: now,
   };
+}
+
+function buildSpeechSummaryFromModel(raw) {
+  const txt = String(raw || '').replace(/```[\s\S]*?```/g, ' ').trim();
+  if (!txt) return '';
+  const lines = txt.split(/\r?\n/);
+  const leadLines = [];
+  const headingItems = [];
+  let inLead = true;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (inLead && leadLines.length > 0) inLead = false;
+      continue;
+    }
+    const isStruct = /^(?:#{1,6}\s+|\d+[.)]\s+|[-*•>]\s+|\|)/.test(trimmed);
+    if (isStruct) {
+      inLead = false;
+      const h = trimmed.replace(/^#{1,6}\s*\d*[.)]?\s*/, '').replace(/^\d+[.)]\s*/, '');
+      if (/^#{1,6}\s+/.test(line) && h) headingItems.push(h.replace(/[:*`]/g, '').trim());
+      continue;
+    }
+    if (inLead) leadLines.push(trimmed);
+  }
+  const leadSpeech = leadLines.length ? cleanTextForSpeech(leadLines.join(' ')) : '';
+  if (leadSpeech && leadSpeech.length >= 25) return leadSpeech;
+  if (headingItems.length) {
+    return cleanTextForSpeech(`Tôi đã hoàn tất các hạng mục: ${headingItems.slice(0, 3).join('; ')}.`);
+  }
+  return cleanTextForSpeech(txt);
 }
 
 function cleanTextForSpeech(raw) {

@@ -10,3 +10,5 @@ voice-home.txt
 Thumbs.db
 *.bak
 *.bak-*
+__pycache__/
+*.pyc

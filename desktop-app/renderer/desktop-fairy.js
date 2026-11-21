@@ -121,7 +121,7 @@
   $('eye-halo-slot').innerHTML = buildHaloSvg('halo');
   $('eye-pulse-slot').innerHTML = PULSE_SVG;
   $('main-eye-svg').innerHTML = buildMainEyeSvg('main');
-  $('corner-logo').innerHTML = buildMiniEyeSvg('corner');
+  if ($('corner-logo')) $('corner-logo').innerHTML = buildMiniEyeSvg('corner');
   $('set-eye-slot').innerHTML = buildMiniEyeSvg('set');
 
   const signalEl = mainEyeEl.querySelector('.fz3-signal');
@@ -1242,7 +1242,7 @@
     $('sw-autoboot').dataset.on = prefs.autoBoot ? '1' : '0';
     if ($('sw-startup')) $('sw-startup').dataset.on = startupEnabled ? '1' : '0';
     $('sw-drag').dataset.on = prefs.drag ? '1' : '0';
-    $('sw-chrome').dataset.on = prefs.chrome ? '1' : '0';
+    if ($('sw-chrome')) $('sw-chrome').dataset.on = prefs.chrome ? '1' : '0';
     $('rng-volume').value = String(prefs.volume);
     $('vol-label').textContent = `${prefs.volume}%`;
     document.querySelectorAll('[data-theme-pick]').forEach((b) => {
@@ -1419,11 +1419,13 @@
     writePref(KEYS.drag, prefs.drag);
     syncPrefsUI();
   });
-  $('sw-chrome').addEventListener('click', () => {
-    prefs.chrome = !prefs.chrome;
-    writePref(KEYS.chrome, prefs.chrome);
-    syncPrefsUI();
-  });
+  if ($('sw-chrome')) {
+    $('sw-chrome').addEventListener('click', () => {
+      prefs.chrome = !prefs.chrome;
+      writePref(KEYS.chrome, prefs.chrome);
+      syncPrefsUI();
+    });
+  }
   document.querySelectorAll('[data-theme-pick]').forEach((btn) => {
     btn.addEventListener('click', () => {
       prefs.theme = btn.dataset.themePick;

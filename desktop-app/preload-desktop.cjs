@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('fairyDesktop', {
   setIgnoreMouse: (ignore) => ipcRenderer.send('fairy:set-ignore-mouse', Boolean(ignore)),
   setShape: (rects) => ipcRenderer.send('fairy:set-shape', Array.isArray(rects) ? rects : null),
+  setFocusable: (focusable) => ipcRenderer.send('fairy:set-focusable', Boolean(focusable)),
   getState: () => ipcRenderer.invoke('fairy:get-state'),
   onState: (cb) => {
     const handler = (_event, data) => cb(data);

@@ -918,6 +918,21 @@ ipcMain.on('fairy:set-ignore-mouse', (_ev, ignore) => {
   mainWin.setIgnoreMouseEvents(Boolean(ignore), { forward: true });
 });
 
+let lastMainFocusable = true;
+ipcMain.on('fairy:set-focusable', (_ev, focusable) => {
+  if (!mainWin || mainWin.isDestroyed() || !IS_WIN || IS_SMOKE_TEST) return;
+  try {
+    const on = Boolean(focusable);
+    if (on === lastMainFocusable) return;
+    lastMainFocusable = on;
+    if (!on) mainWin.blur();
+    mainWin.setFocusable(on);
+    if (on) mainWin.focus();
+  } catch {
+    // Bỏ qua nếu hệ điều hành không hỗ trợ đổi focusable động.
+  }
+});
+
 ipcMain.on('fairy:set-shape', (_ev, rects) => {
   if (!mainWin || mainWin.isDestroyed() || !IS_WIN || IS_SMOKE_TEST) return;
   try {

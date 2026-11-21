@@ -320,15 +320,28 @@
     rafId = requestAnimationFrame(tick);
   }
 
-  // Thu hẹp vùng cửa sổ overlay (Windows) chỉ còn quanh mắt + bubble để không phủ
-  // toàn màn hình (tránh làm đen lớp video phần cứng của Chrome/YouTube).
+  // Thu hẹp vùng cửa sổ overlay (Windows) chỉ còn quanh mắt + bubble kể cả khi nhấn giữ/kéo,
+  // và tắt focusable khi không nhập liệu để tránh cướp focus làm đen video phần cứng Chrome/YouTube.
   let lastShapeKey = '';
+  let lastFocusable = null;
+  let chatInputActive = false;
+  function syncWindowFocusability() {
+    if (!window.fairyDesktop || !window.fairyDesktop.setFocusable) return;
+    const needKeyboard =
+      !settingsModal.classList.contains('hidden') ||
+      (!bubbleEl.classList.contains('hidden') && (bubbleEl.dataset.mode === 'hybrid' || chatInputActive));
+    if (needKeyboard === lastFocusable) return;
+    lastFocusable = needKeyboard;
+    window.fairyDesktop.setFocusable(needKeyboard);
+  }
+
   function syncWindowShape() {
+    syncWindowFocusability();
     if (!window.fairyDesktop || !window.fairyDesktop.setShape) return;
     let rects = null; // null = toàn màn hình (boot, greet, cài đặt)
-    if (phase === 'dock' && settingsModal.classList.contains('hidden') && !dragState) {
+    if (phase === 'dock' && settingsModal.classList.contains('hidden')) {
       rects = [];
-      const pad = 36;
+      const pad = dragState ? 96 : 36;
       const els = [coreEl];
       if (!bubbleEl.classList.contains('hidden')) els.push(bubbleEl);
       for (const el of els) {
@@ -698,6 +711,7 @@
     bubbleEl.classList.remove('hidden');
     renderBubble();
     placeBubble();
+    syncWindowShape();
     const closeDelay = autoCloseMs > 0 ? autoCloseMs : (mode === 'turn' ? 10000 : mode === 'toast' ? 4500 : 0);
     if (closeDelay > 0) {
       turnBubbleTimer = setTimeout(() => {
@@ -708,7 +722,9 @@
 
   function closeBubble() {
     clearTimeout(turnBubbleTimer);
+    chatInputActive = false;
     bubbleEl.classList.add('hidden');
+    syncWindowShape();
     if (phase === 'dock') setIgnoreMouse(true);
   }
 
@@ -833,6 +849,7 @@
       scheduleFlickerLoop();
       setIgnoreMouse(true);
     }
+    syncWindowShape();
   }
 
   async function startBootPlayback() {
@@ -1015,6 +1032,7 @@
     }
     applyDockPos(clampPos(e.clientX - dragState.dx, e.clientY - dragState.dy));
     placeBubble();
+    syncWindowShape();
   });
 
   function finishDrag(e) {
@@ -1025,6 +1043,7 @@
     layerEl.dataset.dragging = '0';
 
     if (e.type === 'pointercancel') {
+      syncWindowShape();
       updateMousePassthrough(e.clientX, e.clientY);
       return;
     }
@@ -1034,6 +1053,7 @@
       customPos = clampPos(r.left + r.width / 2, r.top + r.height / 2);
       writePref(KEYS.pos, customPos);
       placeBubble();
+      syncWindowShape();
     } else if (!holdUnlocked) {
       const now = performance.now();
       if (now - lastShortClickAt <= DBL_CLICK_MS) {
@@ -1182,11 +1202,21 @@
     refreshStartupPref();
     settingsModal.classList.remove('hidden');
     setIgnoreMouse(false);
+    syncWindowShape();
   }
 
   function closeSettings() {
     settingsModal.classList.add('hidden');
     if (phase === 'dock') setIgnoreMouse(true);
+    syncWindowShape();
+  }
+
+  if ($('b-chat-input')) {
+    $('b-chat-input').addEventListener('pointerdown', () => {
+      chatInputActive = true;
+      syncWindowFocusability();
+      setTimeout(() => { if ($('b-chat-input')) $('b-chat-input').focus(); }, 20);
+    });
   }
 
   $('btn-close-bubble').addEventListener('click', closeBubble);

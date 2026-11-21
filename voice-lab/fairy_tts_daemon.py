@@ -97,6 +97,8 @@ def main():
     tmpd = tempfile.mkdtemp(prefix="fairy_tts_ref_")
     atexit.register(lambda: shutil.rmtree(tmpd, ignore_errors=True))
 
+    hw_info = tf.configure_hardware_env()
+
     with contextlib.redirect_stdout(sys.stderr):
         y_src = tf.load_mono_f32(ref_src)
         tts, voice_id = tf.build_fairy_ref_tts(y_src, tmpd)
@@ -110,7 +112,14 @@ def main():
             except Exception:
                 pass
 
-    emit_json({"ready": True, "backend": getattr(tts, "backend", "auto")})
+    emit_json({
+        "ready": True,
+        "backend": getattr(tts, "backend", "auto"),
+        "platform": sys.platform,
+        "arch": hw_info.get("arch", ""),
+        "threads": hw_info.get("threads", 0),
+        "ffmpeg": tf.FFMPEG,
+    })
 
     for raw_line in sys.stdin:
         line = raw_line.strip()

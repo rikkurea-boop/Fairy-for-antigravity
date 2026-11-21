@@ -7,13 +7,102 @@ Fairy JP Clean Android DSP v2:
 """
 import argparse
 import os
+import platform
+import shutil
 import subprocess
+import sys
 import tempfile
 import wave
 import numpy as np
 
-FFMPEG = r"C:\ffmpeg\bin\ffmpeg.exe"
+
+def _subproc_flags() -> int:
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if os.name == "nt" else 0
+
+
+def is_apple_silicon() -> bool:
+    return sys.platform == "darwin" and platform.machine().lower() in ("arm64", "aarch64")
+
+
+def detect_apple_silicon_perf_cores() -> int:
+    """Detect P-cores on Apple Silicon via sysctl, falling back safely on other CPUs."""
+    if is_apple_silicon():
+        try:
+            res = subprocess.run(
+                ["sysctl", "-n", "hw.perflevel0.physicalcpu"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if res.returncode == 0 and res.stdout.strip().isdigit():
+                return max(2, min(16, int(res.stdout.strip())))
+        except Exception:
+            pass
+        return min(8, max(4, (os.cpu_count() or 8) - 2))
+    return min(8, max(2, (os.cpu_count() or 8) // 2))
+
+
+def configure_hardware_env() -> dict:
+    """Configure BLAS/Accelerate/MPS thread limits tuned for the host chip."""
+    threads = detect_apple_silicon_perf_cores()
+    apple_si = is_apple_silicon()
+    if apple_si:
+        os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+        for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+            os.environ.setdefault(var, str(threads))
+    return {"apple_silicon": apple_si, "threads": threads, "arch": platform.machine()}
+
+
+def resolve_ffmpeg() -> str:
+    """Locate ffmpeg across Windows, Apple Silicon Homebrew (/opt/homebrew), Intel Mac, and Linux."""
+    candidates = [
+        os.environ.get("FAIRY_FFMPEG", "").strip(),
+        shutil.which("ffmpeg") or "",
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return "ffmpeg"
+
+
+FFMPEG = resolve_ffmpeg()
 SR = 48000
+_HAS_RUBBERBAND = None
+
+
+def _ffmpeg_has_rubberband() -> bool:
+    global _HAS_RUBBERBAND
+    if _HAS_RUBBERBAND is not None:
+        return _HAS_RUBBERBAND
+    try:
+        res = subprocess.run(
+            [FFMPEG, "-hide_banner", "-filters"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            creationflags=_subproc_flags(),
+        )
+        _HAS_RUBBERBAND = "rubberband" in (res.stdout or "")
+    except Exception:
+        _HAS_RUBBERBAND = False
+    return _HAS_RUBBERBAND
+
+
+def _build_pitch_formant_filter(formant_shift: float, pitch_comp: float, trailing_chain: str, sr: int = SR) -> str:
+    if _ffmpeg_has_rubberband():
+        return (
+            f"[0:a]rubberband=pitch={formant_shift}:formant=shifted,"
+            f"rubberband=pitch={pitch_comp}:formant=preserved,"
+            f"{trailing_chain}[out]"
+        )
+    total_pitch = max(0.65, min(1.5, round(formant_shift * pitch_comp, 4)))
+    atempo = max(0.5, min(2.0, round(1.0 / total_pitch, 4)))
+    rate_hz = int(round(sr * total_pitch))
+    return f"[0:a]asetrate={rate_hz},aresample={sr},atempo={atempo},{trailing_chain}[out]"
 
 
 def load_mono_f32(path: str, sr: int = SR) -> np.ndarray:
@@ -306,12 +395,13 @@ def render_independent_formant_android(
     comb_samples = int(round(0.0035 * sr))
 
     # Single-stream rubberband decouples vocal-tract formant (+6.5%) + main EQ; comb/unison run in RAM
-    fc = (
-        f"[0:a]rubberband=pitch={formant_shift}:formant=shifted,"
-        f"rubberband=pitch={pitch_comp}:formant=preserved,"
+    fc = _build_pitch_formant_filter(
+        formant_shift,
+        pitch_comp,
         "highpass=f=100,equalizer=f=230:t=q:w=1.2:g=1.4,"
         "equalizer=f=3300:t=q:w=1.3:g=-1.8,"
-        "acompressor=threshold=-19dB:ratio=2.8:attack=5:release=70[out]"
+        "acompressor=threshold=-19dB:ratio=2.8:attack=5:release=70",
+        sr=sr,
     )
 
     proc = subprocess.run(
@@ -398,18 +488,49 @@ def trim_silence_taper(y: np.ndarray, sr: int = SR, pad_ms: int = 18) -> np.ndar
     return seg
 
 
-def build_fairy_ref_tts(y_src: np.ndarray, tmpdir: str, sr: int = SR):
-    """Prepare the flattened +6% formant Truc Ly reference voice inside a shared VieNeu instance."""
+def _instantiate_vieneu_optimized():
+    """Select optimal VieNeu backend: CUDA on NVIDIA, P-core ONNX (or optional MPS) on Apple Silicon."""
     from vieneu import Vieneu
 
+    hw = configure_hardware_env()
+    req_backend = os.environ.get("FAIRY_TTS_BACKEND", "auto").strip().lower()
+    if req_backend == "onnx":
+        return Vieneu(backend="onnx", threads=hw["threads"])
+    if req_backend == "mps":
+        os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+        try:
+            import torch
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return Vieneu(device="mps", backend="pytorch", dtype="float32")
+        except Exception:
+            pass
+        return Vieneu(backend="onnx", threads=hw["threads"])
+    if req_backend == "cuda":
+        return Vieneu(device="cuda", backend="pytorch")
+
+    # Auto-selection
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return Vieneu()
+        if hw["apple_silicon"] and os.environ.get("FAIRY_PREFER_MPS") == "1":
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                try:
+                    return Vieneu(device="mps", backend="pytorch", dtype="float32")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return Vieneu(backend="onnx", threads=hw["threads"])
+
+
+def build_fairy_ref_tts(y_src: np.ndarray, tmpdir: str, sr: int = SR):
+    """Prepare the flattened +6% formant Truc Ly reference voice inside a shared VieNeu instance."""
     yq, _, _, _ = quantize_semitone_fast(y_src, snap_alpha=0.82, sr=sr)
     y_ref = apply_staccato_ai_dynamics(yq, sr=sr)
     ref_path = os.path.join(tmpdir, "fairy_ref.wav")
-    fc_ref = (
-        "[0:a]rubberband=pitch=1.060:formant=shifted,"
-        "rubberband=pitch=0.9434:formant=preserved,"
-        "loudnorm=I=-16:TP=-1.5:LRA=9[out]"
-    )
+    fc_ref = _build_pitch_formant_filter(1.060, 0.9434, "loudnorm=I=-16:TP=-1.5:LRA=9", sr=sr)
     subprocess.run(
         [
             FFMPEG, "-y", "-v", "error",
@@ -418,8 +539,9 @@ def build_fairy_ref_tts(y_src: np.ndarray, tmpdir: str, sr: int = SR):
         ],
         input=y_ref.tobytes(),
         check=True,
+        creationflags=_subproc_flags(),
     )
-    tts = Vieneu()
+    tts = _instantiate_vieneu_optimized()
     voice_id = tts.add_voice("Fairy_HDD_Ref", ref_path, denoise=False, use_ref_codes=True, save=False)
     return tts, voice_id
 
@@ -467,7 +589,13 @@ def main():
     parser.add_argument("--text", default="", help="Synthesize an arbitrary sentence using the locked Fairy preset.")
     parser.add_argument("--out", default="", help="Output WAV path for --text mode.")
     parser.add_argument("--copy-to", default="", help="Optional second directory to mirror generated pack files.")
+    parser.add_argument("--mps", action="store_true", help="Prefer PyTorch Metal (MPS) backend on Apple Silicon.")
+    parser.add_argument("--backend", default="", help="Override TTS backend (auto|onnx|mps|cuda).")
     args = parser.parse_args()
+    if args.mps:
+        os.environ["FAIRY_PREFER_MPS"] = "1"
+    if args.backend:
+        os.environ["FAIRY_TTS_BACKEND"] = args.backend
 
     y_src = load_mono_f32(args.src)
     with tempfile.TemporaryDirectory() as tmpd:

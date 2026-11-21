@@ -13,7 +13,7 @@ const {
   nativeImage,
   screen,
 } = require('electron');
-const { execFileSync, spawn } = require('node:child_process');
+const { execFile, execFileSync, spawn } = require('node:child_process');
 const {
   closeSync,
   createReadStream,
@@ -53,6 +53,9 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Bật kết xuất GPU mặc định để cửa sổ trong suốt khử viền alpha mịn; chỉ tắt khi cần chẩn đoán.
 if (process.env.FAIRY_DISABLE_GPU === '1') {
   app.disableHardwareAcceleration();
+} else if (IS_MAC) {
+  // Bật Metal backend trên Apple Silicon (M1 Pro) để khử rách hình ở ProMotion 120 Hz.
+  app.commandLine.appendSwitch('enable-features', 'Metal');
 }
 
 const ROOT_DIR = __dirname;
@@ -69,7 +72,21 @@ const BRAIN_DIR = join(APP_DATA_DIR, 'brain');
 const VOICE_CHATS_DIR = join(APP_DATA_DIR, 'voice_chats');
 const CONV_ID_RE = /^[0-9a-f-]{8,}$/i;
 const VOICE_WORKER_SCRIPT = join(ROOT_DIR, '..', 'scripts', 'antigravity-voice-worker.ps1');
-const TTS_PYTHON_EXE = join(ROOT_DIR, '..', 'voice-lab', 'VieNeu-TTS', '.venv', 'Scripts', 'python.exe');
+
+function resolveTtsPythonExe() {
+  const envPy = String(process.env.FAIRY_PYTHON_EXE || '').trim();
+  if (envPy && existsSync(envPy)) return envPy;
+  const venvRoot = join(ROOT_DIR, '..', 'voice-lab', 'VieNeu-TTS', '.venv');
+  const candidates = IS_WIN
+    ? [join(venvRoot, 'Scripts', 'python.exe')]
+    : [join(venvRoot, 'bin', 'python'), join(venvRoot, 'bin', 'python3')];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return candidates[0];
+}
+
+const TTS_PYTHON_EXE = resolveTtsPythonExe();
 const TTS_DAEMON_SCRIPT = join(ROOT_DIR, '..', 'voice-lab', 'fairy_tts_daemon.py');
 
 const ASSET_MAP = {
@@ -1745,8 +1762,14 @@ async function executeHybridAction(req = {}) {
 
   if ((action === 'send-message' || action === 'new-conversation') && process.env.ANTIGRAVITY_LS_ADDRESS && process.env.ANTIGRAVITY_CSRF_TOKEN) {
     try {
-      const defaultLsExe = join(process.env.LOCALAPPDATA || '', 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe');
-      const lsExe = process.env.ANTIGRAVITY_AGENTAPI_EXE || (existsSync(defaultLsExe) ? defaultLsExe : '');
+      const lsCandidates = IS_MAC
+        ? [
+            '/Applications/Antigravity.app/Contents/Resources/bin/language_server',
+            join(homedir(), 'Applications', 'Antigravity.app', 'Contents/Resources/bin/language_server'),
+          ]
+        : [join(process.env.LOCALAPPDATA || '', 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe')];
+      const defaultLsExe = lsCandidates.find((p) => existsSync(p)) || '';
+      const lsExe = process.env.ANTIGRAVITY_AGENTAPI_EXE || defaultLsExe;
       if (lsExe) {
         const args =
           action === 'new-conversation'
@@ -1874,7 +1897,13 @@ function rejectPendingTts(reason) {
 function startTtsWorker() {
   if (IS_SMOKE_TEST || ttsWorker || !existsSync(TTS_PYTHON_EXE) || !existsSync(TTS_DAEMON_SCRIPT)) return;
   try {
+    const childEnv = { ...process.env };
+    if (IS_MAC) {
+      childEnv.PATH = `/opt/homebrew/bin:/usr/local/bin:${childEnv.PATH || '/usr/bin:/bin'}`;
+      childEnv.PYTORCH_ENABLE_MPS_FALLBACK = childEnv.PYTORCH_ENABLE_MPS_FALLBACK || '1';
+    }
     const child = spawn(TTS_PYTHON_EXE, [TTS_DAEMON_SCRIPT], {
+      env: childEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -2133,33 +2162,89 @@ function scheduleSpeechFromSnapshot(snap) {
 }
 
 function scheduleNextUiaPoll(delayMs = 350) {
-  if (IS_SMOKE_TEST || !IS_WIN) return;
+  if (IS_SMOKE_TEST || (!IS_WIN && !IS_MAC)) return;
   clearTimeout(uiaPollTimer);
   uiaPollTimer = setTimeout(pollLiveVoiceSubtitle, delayMs);
 }
 
+function readMacVoiceSubtitle() {
+  return new Promise((resolve) => {
+    const script = `
+      tell application "System Events"
+        if not (exists process "Antigravity") then return "NO_PROC"
+        tell process "Antigravity"
+          if (count of windows) is 0 then return "NO_WIN"
+          set endBtn to missing value
+          try
+            set endBtn to first button of entire contents of window 1 whose name is "End" or name is "End voice mode" or name is "Stop voice mode"
+          end try
+          if endBtn is missing value then return "CLOSED"
+          set endPos to position of endBtn
+          set endSize to size of endBtn
+          set headerBottom to (item 2 of endPos) + (item 2 of endSize)
+          set outText to ""
+          try
+            set txtElems to (every static text of entire contents of window 1)
+            repeat with st in txtElems
+              set p to position of st
+              if (item 2 of p) >= (headerBottom - 4) and (item 2 of p) <= (headerBottom + 240) then
+                set v to (value of st) as text
+                if length of v > 0 then
+                  if outText is "" then
+                    set outText to v
+                  else
+                    set outText to outText & " " & v
+                  end if
+                end if
+              end if
+            end repeat
+          end try
+          return "OPEN:" & outText
+        end tell
+      end tell`;
+    execFile('osascript', ['-e', script], { timeout: 900 }, (err, stdout) => {
+      if (err) {
+        resolve({ ok: false, error: 'mac_accessibility_or_timeout' });
+        return;
+      }
+      const raw = String(stdout || '').trim();
+      if (raw === 'NO_PROC' || raw === 'NO_WIN') {
+        resolve({ ok: false, error: 'window_not_found' });
+        return;
+      }
+      if (!raw.startsWith('OPEN:')) {
+        resolve({ ok: true, voiceOpen: false, subtitle: '' });
+        return;
+      }
+      resolve({ ok: true, voiceOpen: true, timer: '', subtitle: raw.slice(5).trim() });
+    });
+  });
+}
+
 async function pollLiveVoiceSubtitle() {
-  if (IS_SMOKE_TEST || !IS_WIN) return;
+  if (IS_SMOKE_TEST || (!IS_WIN && !IS_MAC)) return;
   if (uiaPollInFlight) {
     scheduleNextUiaPoll(350);
     return;
   }
-  if (!voiceWorkerReady || voicePending.size > 0) {
+  if (IS_WIN && (!voiceWorkerReady || voicePending.size > 0)) {
     scheduleNextUiaPoll(voicePending.size > 0 ? 500 : 800);
     return;
   }
 
   uiaPollInFlight = true;
-  let nextDelay = 700;
+  let nextDelay = IS_MAC ? 1200 : 700;
   try {
-    const res = await sendVoiceWorkerCommand(
-      'READ_VOICE_SUBTITLE',
-      { muteAg: Boolean(ttsEnabled && autoMuteAntigravity) },
-      900
-    );
+    const res = IS_MAC
+      ? await readMacVoiceSubtitle()
+      : await sendVoiceWorkerCommand(
+          'READ_VOICE_SUBTITLE',
+          { muteAg: Boolean(ttsEnabled && autoMuteAntigravity) },
+          900
+        );
     const now = Date.now();
     if (!res || !res.ok) {
-      nextDelay = res?.error === 'window_not_found' ? 2000 : 1000;
+      nextDelay = res?.error === 'mac_accessibility_or_timeout' ? 3000 : res?.error === 'window_not_found' ? 2000 : 1000;
     } else if (!res.voiceOpen) {
       // Giữ nguyên uiaCommittedText khi đóng hộp Voice Mode để không đọc lặp lại câu cũ.
       const wasOpen = Boolean(liveUiaSubtitle?.voiceOpen);
@@ -2167,9 +2252,9 @@ async function pollLiveVoiceSubtitle() {
         liveUiaSubtitle = null;
         pushStateToRenderer();
       }
-      nextDelay = 700;
+      nextDelay = IS_MAC ? 1200 : 700;
     } else {
-      nextDelay = 350;
+      nextDelay = IS_MAC ? 500 : 350;
       const rawSub = String(res.subtitle || '').replace(/\s+/g, ' ').trim();
       if (liveUiaSubtitle) {
         liveUiaSubtitle.lastSeenAt = now;
